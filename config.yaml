@@ -1,0 +1,71 @@
+# TANEBI設定ファイル
+# claude-native アダプター（MVP・ゼロインフラ）をデフォルト設定
+
+tanebi:
+  version: "1.0"
+  adapter_set: "claude-native"
+
+  # アダプター設定
+  adapters:
+    communication:
+      type: "claude-native"
+      description: "Task toolによるエージェント間通信"
+    process:
+      type: "claude-native"
+      description: "Task toolの並列呼び出しによるプロセス管理"
+    state_store:
+      type: "file"
+      description: "ファイルベース状態管理（work/ディレクトリ）"
+    knowledge_store:
+      type: "file"
+      description: "ファイルベース知識管理（personas/ + knowledge/）"
+    security:
+      type: "claude-permissions"
+      description: "Claude Codeのpermissions設定による制御"
+
+  # claude-nativeアダプター詳細設定
+  adapter_config:
+    claude-native:
+      work_dir: "work"
+      persona_dir: "personas/active"
+      library_dir: "personas/library"
+      history_dir: "personas/history"
+      knowledge_dir: "knowledge"
+      few_shot_dir: "knowledge/few_shot_bank"
+      episode_dir: "knowledge/episodes"
+      max_parallel_workers: 5
+      worker_max_turns: 30
+      default_model: "claude-sonnet-4-6"
+      decomposer_model: "claude-sonnet-4-6"
+      aggregator_model: "claude-sonnet-4-6"
+
+  # 進化エンジン設定
+  evolution:
+    enabled: true
+    auto_snapshot_interval: 5    # N タスク毎に自動スナップショット
+    fitness_weights:
+      quality_score: 0.35
+      completion_rate: 0.30
+      efficiency: 0.20
+      growth_rate: 0.15
+    fitness_window: 20           # 直近Nタスクのスライディングウィンドウ
+
+  # Few-Shot Bank設定
+  few_shot_bank:
+    max_entries_per_domain: 100  # ドメイン毎の最大エントリ数
+    min_quality_threshold: "GREEN"  # 登録する最低品質
+    auto_register: true          # タスク完了時に自動登録（Week 3で有効化）
+
+  # ログ設定
+  logging:
+    level: "INFO"                # DEBUG / INFO / WARN / ERROR
+    task_log_dir: "work"         # タスクログはwork/cmd_NNN/以下に保存
+
+  # Week 1 スタブ設定（将来の機能）
+  modules:
+    trust:
+      enabled: false             # Week 3-4で有効化
+    cognitive_quality:
+      enabled: false             # 将来フェーズ
+    communication_optimization:
+      enabled: false             # 将来フェーズ

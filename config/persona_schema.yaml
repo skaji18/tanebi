@@ -1,0 +1,189 @@
+# TANEBI Persona YAMLスキーマ定義
+# design.md Section 4.1 に基づく
+# このファイルはスキーマドキュメント。実際のPersonaはpersonas/active/に配置。
+
+schema_version: "1.0"
+
+# Personaの粒度定義
+# - full: Layer 1-4全て + Evolution Metadata（完全バックアップ・移植用）
+# - portable: Layer 2-4（Performance除外）（コピー・合成用）
+# - seed: Layer 4 + Behavior初期値のみ（新規エージェント初期化用）
+granularity:
+  full: [identity, knowledge, behavior, performance, evolution]
+  portable: [identity, knowledge, behavior]
+  seed: [identity, behavior]
+
+# フィールド定義
+fields:
+  # メタデータ（全粒度共通）
+  meta:
+    id:
+      type: string
+      description: "Persona一意識別子（例: generalist_v1）"
+      required: true
+    base_model:
+      type: string
+      description: "ベースモデルID（例: claude-sonnet-4-6）"
+      default: "claude-sonnet-4-6"
+    version:
+      type: integer
+      description: "バージョン番号。進化するたびにインクリメント"
+      default: 1
+    created_at:
+      type: datetime
+      description: "ISO 8601形式"
+    parent_version:
+      type: string
+      description: "前バージョンのID。最初のseedはnull"
+      nullable: true
+    lineage:
+      type: array[string]
+      description: "先祖ID一覧（最古から現在まで）"
+      default: []
+
+  # Layer 4: Identity（同一性）- 最も安定。変更頻度: 月単位
+  identity:
+    name:
+      type: string
+      description: "エージェントの名前（例: 鉄壁のDB職人）"
+      required: true
+    speech_style:
+      type: string
+      description: "口調・スタイル（例: 冷静沈着、丁寧、積極的）"
+    archetype:
+      type: enum
+      values: [specialist, generalist, hybrid]
+      description: "specialist=専門特化, generalist=汎用, hybrid=両方"
+      default: generalist
+    origin:
+      type: enum
+      values: [seeded, copied, merged, evolved]
+      description: "生成方法"
+      default: seeded
+
+  # Layer 3: Knowledge（知識）- 成長する。変更頻度: タスク毎
+  knowledge:
+    domains:
+      type: array
+      description: "習熟ドメイン一覧"
+      item_schema:
+        name:
+          type: string
+          description: "ドメイン名（例: database_design, api_design）"
+        proficiency:
+          type: float
+          range: [0.0, 1.0]
+          description: "習熟度。0.0=未経験, 1.0=最高水準"
+          default: 0.5
+        task_count:
+          type: integer
+          description: "このドメインでの累積タスク数"
+          default: 0
+        last_updated:
+          type: date
+          description: "最終更新日（YYYY-MM-DD）"
+    few_shot_refs:
+      type: array[string]
+      description: "参照するFew-Shotキー（例: episodic:db:task042）"
+      default: []
+    anti_patterns:
+      type: array
+      description: "過去に犯したミスのパターン集"
+      item_schema:
+        pattern:
+          type: string
+          description: "アンチパターンの説明"
+        detected_count:
+          type: integer
+          default: 1
+        correction:
+          type: string
+          description: "修正方法"
+
+  # Layer 2: Behavior（行動特性）- 進化する。変更頻度: 数タスク毎
+  behavior:
+    risk_tolerance:
+      type: float
+      range: [0.0, 1.0]
+      description: "リスク許容度。0=保守的, 1=積極的"
+      default: 0.5
+    detail_orientation:
+      type: float
+      range: [0.0, 1.0]
+      description: "詳細志向度。0=概略重視, 1=細部重視"
+      default: 0.5
+    speed_vs_quality:
+      type: float
+      range: [0.0, 1.0]
+      description: "速度vs品質バランス。0=品質最優先, 1=速度最優先"
+      default: 0.3
+    autonomy_preference:
+      type: float
+      range: [0.0, 1.0]
+      description: "自律度の好み。0=確認重視, 1=自律重視"
+      default: 0.5
+    communication_density:
+      type: float
+      range: [0.0, 1.0]
+      description: "通信密度。0=簡潔, 1=詳細"
+      default: 0.5
+
+  # Layer 1: Performance（実績）- 客観計測。変更頻度: タスク毎
+  # portable粒度ではこの層を除外（信頼は自分で獲得するもの）
+  performance:
+    trust_score:
+      type: integer
+      range: [0, 100]
+      description: "信頼スコア（0-100）。初期値50"
+      default: 50
+    total_tasks:
+      type: integer
+      default: 0
+    success_rate:
+      type: float
+      range: [0.0, 1.0]
+      default: 0.0
+    avg_quality:
+      type: enum
+      values: [GREEN, YELLOW, RED, UNKNOWN]
+      default: UNKNOWN
+    specialization_index:
+      type: float
+      range: [0.0, 1.0]
+      description: "特化度。0=汎用, 1=高度特化"
+      default: 0.0
+    streak:
+      current:
+        type: integer
+        default: 0
+      best:
+        type: integer
+        default: 0
+    domain_success_rates:
+      type: map[string, float]
+      description: "ドメイン別成功率"
+      default: {}
+
+  # Evolution Metadata（進化メタデータ）- full粒度のみ
+  evolution:
+    generation:
+      type: integer
+      description: "進化世代数"
+      default: 1
+    fitness_score:
+      type: float
+      range: [0.0, 1.0]
+      description: "適応度スコア（fitness function計算結果）"
+      default: 0.5
+    last_evolution_event:
+      type: object
+      nullable: true
+      description: "直近の進化イベント詳細"
+    mutations_log:
+      type: array
+      description: "進化履歴ログ"
+      default: []
+    crossover_history:
+      type: array
+      description: "交叉（合成）履歴"
+      default: []
