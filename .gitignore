@@ -1,0 +1,22 @@
+# Work directories (task-specific, generated at runtime)
+work/
+
+# Persona history can get large
+personas/history/
+
+# Knowledge episodes (generated at runtime)
+knowledge/episodes/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Claude Code
+.claude/
