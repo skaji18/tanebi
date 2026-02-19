@@ -1,11 +1,13 @@
 # Work directories (task-specific, generated at runtime)
 work/
 
-# Persona history can get large
+# Persona runtime data (active evolves with usage, history stores snapshots)
+personas/active/
 personas/history/
 
-# Knowledge episodes (generated at runtime)
+# Knowledge (generated at runtime)
 knowledge/episodes/
+knowledge/few_shot_bank/*/
 
 # OS files
 .DS_Store

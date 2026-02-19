@@ -12,10 +12,11 @@ TANEBIは、エージェントにタスク実行を重ねるたびに成長・�
 ```bash
 git clone https://github.com/skaji18/tanebi
 cd tanebi
+bash scripts/setup.sh   # 初回のみ: Seed Personaを配置
 claude
 ```
 
-これだけ。tmux不要、プロセス管理不要、追加インフラ不要。Claude Codeさえあれば動きます。
+tmux不要、プロセス管理不要、追加インフラ不要。Claude Codeさえあれば動きます。
 
 ## TANEBIを使うと何が変わるか
 

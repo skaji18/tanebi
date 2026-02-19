@@ -36,32 +36,76 @@ bash scripts/new_cmd.sh   # → work/cmd_NNN/ を作成
 
 ### Step 2: DECOMPOSE（Decomposerに委譲）
 
-Task tool で **Decomposer Worker** を起動:
+`templates/decomposer.md` を Read tool で読み取り、以下のプレースホルダーを展開して
+Task tool の prompt として使用する:
 
-- インプット: `work/cmd_NNN/request.md` + `personas/active/` 一覧（ファイル名のみ）
-- アウトプット: `work/cmd_NNN/plan.md`
-  - サブタスク一覧、各サブタスクへのPersona割り当て、依存関係を記載
+- `{REQUEST_PATH}` → `work/cmd_NNN/request.md` の絶対パス
+- `{PERSONA_LIST}` → `personas/active/` のYAMLファイル名一覧（拡張子なし）
+- `{PLAN_PATH}` → `work/cmd_NNN/plan.md` の絶対パス
+- `{CMD_ID}` → cmd_NNN
+- `{TIMESTAMP}` → ISO8601形式の現在時刻
+
+Task tool でDecomposerを起動し、出力 `work/cmd_NNN/plan.md` を待つ。
 
 ### Step 3: EXECUTE（Worker群を並列起動）
 
-`plan.md` を読み、依存関係に従って Task tool で Worker 群を起動:
+`plan.md` を Read tool で読み、各サブタスクに対して以下を実行:
 
-- 各Workerに渡すもの: サブタスク内容 + 割り当てPersona YAMLパス + 関連Few-Shotパス + 出力先パス
+**Persona YAMLの読み取りとプレースホルダー展開:**
+
+割り当てPersona YAML（`personas/active/{persona_id}.yaml`）を Read tool で読み取り、
+`templates/worker_base.md` の以下のプレースホルダーを展開して Task tool の prompt として使用する:
+
+- `{PERSONA_PATH}` → `personas/active/{persona_id}.yaml` の絶対パス
+- `{PERSONA_NAME}` → `persona.identity.name`
+- `{PERSONA_ARCHETYPE}` → `persona.identity.archetype`
+- `{PERSONA_SPEECH_STYLE}` → `persona.identity.speech_style`
+- `{PERSONA_DOMAINS}` → `persona.knowledge.domains` の一覧（name + proficiency）
+- `{BEHAVIOR_RISK_TOLERANCE}` → `persona.behavior.risk_tolerance`
+- `{BEHAVIOR_DETAIL_ORIENTATION}` → `persona.behavior.detail_orientation`
+- `{BEHAVIOR_SPEED_VS_QUALITY}` → `persona.behavior.speed_vs_quality`
+- `{FEW_SHOT_PATHS}` → `knowledge/few_shot_bank/{domain}/` 以下の関連ファイルパス一覧（なければ "なし"）
+- `{SUBTASK_ID}` → サブタスクID
+- `{TASK_DESCRIPTION}` → サブタスクの説明
+- `{OUTPUT_PATH}` → `work/cmd_NNN/results/{SUBTASK_ID}.md` の絶対パス
+
+**Waveベースの並列実行:**
+
+- 同一wave内のサブタスク → **同一メッセージで複数 Task tool 呼び出し**（並列起動）
+- Wave N が全て完了してから Wave N+1 を開始
 - 出力先: `work/cmd_NNN/results/{subtask_id}.md`
-- **独立タスクは並列起動**（同一メッセージで複数 Task tool 呼び出し）
-- 依存タスクは前のWorker完了後に起動
 
 ### Step 4: AGGREGATE（Aggregatorに委譲）
 
-全Worker完了後、Task tool で **Aggregator Worker** を起動:
+全Worker完了後、`templates/aggregator.md` を Read tool で読み取り、以下のプレースホルダーを展開して
+Task tool の prompt として使用する:
 
-- インプット: `work/cmd_NNN/results/` 以下のファイルパス一覧（**パスのみ。内容を読まない**）
-- アウトプット: `work/cmd_NNN/report.md`
+- `{RESULTS_DIR}` → `work/cmd_NNN/results/` の絶対パス
+- `{REPORT_PATH}` → `work/cmd_NNN/report.md` の絶対パス
+- `{CMD_ID}` → cmd_NNN
+- `{TIMESTAMP}` → ISO8601形式の現在時刻
 
-### Step 5: EVOLVE（Week 2以降で実装）
+**パス受け渡し係原則（再確認）**: オーケストレーター自身は `results/` ファイルの内容を読まない。
+Aggregator にディレクトリパスを渡すだけ。Aggregator が内容を読んで統合レポートを生成する。
 
-現時点ではスキップ。
-「進化ステップは Week 2以降で実装予定です」とログに出力。
+### Step 5: EVOLVE（進化ループ）
+
+Aggregator完了後、以下のコマンドで進化ステップを実行:
+
+```bash
+bash scripts/evolve.sh work/{CMD_ID}
+```
+
+**進化完了後の確認:**
+
+```bash
+cat personas/active/{persona_id}.yaml
+# → performance.total_tasks, success_rate, last_task_date が更新されているはず
+# → evolution.last_evolution_event に今回のコマンドが追記されているはず
+```
+
+`evolve.sh` はWorker結果の YAML frontmatter を解析し、対応するPersonaのパフォーマンス統計を
+自動更新する。GREEN品質のタスクはFew-Shot候補としてログに出力される（Week 3で自動登録予定）。
 
 ## パス受け渡し係原則（CRITICAL）
 
@@ -88,11 +132,11 @@ Persona が存在しない種類のタスク → `generalist` として汎用Wor
 
 ## 進化フェーズ（Week 2以降）
 
-| Week | テーマ |
-|------|--------|
-| 1 | コア骨格（現在）: CLAUDE.md + Persona YAMLスキーマ + Seed 2-3種 |
-| 2 | 進化ループ基礎: Workerテンプレート + Few-Shot Bank + evolve.sh |
-| 3 | 進化エンジン本体: 適応度関数 + Persona自動更新 |
-| 4 | 統合・検証: E2Eテスト + Trust Module + 進化可視化 |
+| Week | テーマ | 状態 |
+|------|--------|------|
+| 1 | コア骨格: CLAUDE.md + Persona YAMLスキーマ + Seed 2-3種 | ✅ 完了 |
+| 2 | 進化ループ基礎: Workerテンプレート + Few-Shot Bank + evolve.sh | ✅ 完了 |
+| 3 | 進化エンジン本体: 適応度関数 + Persona自動更新 | 予定 |
+| 4 | 統合・検証: E2Eテスト + Trust Module + 進化可視化 | 予定 |
 
-Week 1は骨格。EvolveフェーズはStep 5でTODOとして明示済み。
+Week 1-2完了。Step 5（EVOLVE）は `bash scripts/evolve.sh` として実装済み。
