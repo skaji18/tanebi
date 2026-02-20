@@ -7,9 +7,10 @@ set -euo pipefail
 #   trust_module.sh on_task_assign <persona_id> <task_risk_level>
 #   trust_module.sh on_task_complete <persona_id> <status> <quality>
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TANEBI_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PERSONAS_DIR="$TANEBI_ROOT/personas/active"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../../scripts/tanebi_config.sh"
+
+PERSONAS_DIR="$TANEBI_PERSONA_DIR"
 
 # --- Helper: read trust_score from persona YAML ---
 read_trust_score() {

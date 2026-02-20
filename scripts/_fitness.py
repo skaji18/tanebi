@@ -13,6 +13,10 @@ import glob
 import re
 from datetime import date
 
+# Import tanebi_config for path constants
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import tanebi_config as cfg
+
 # Default weights (overridden by config.yaml if available)
 DEFAULT_WEIGHTS = {
     'quality_score': 0.35,
@@ -201,8 +205,7 @@ def update_fitness_score(persona_yaml_path):
     """
     persona_yaml_path = os.path.expanduser(persona_yaml_path)
 
-    # Derive tanebi root: .../tanebi/personas/active/xxx.yaml → .../tanebi
-    tanebi_root = os.path.dirname(os.path.dirname(os.path.dirname(persona_yaml_path)))
+    tanebi_root = cfg.TANEBI_ROOT
 
     weights, window = _load_config(tanebi_root)
 
@@ -220,7 +223,7 @@ def update_fitness_score(persona_yaml_path):
         pass
 
     # Collect history & calculate
-    work_dir = os.path.join(tanebi_root, 'work')
+    work_dir = cfg.WORK_DIR
     task_history = collect_task_history(work_dir, persona_id, persona_name)
     fitness = calculate_fitness(persona_data, task_history, weights, window)
 

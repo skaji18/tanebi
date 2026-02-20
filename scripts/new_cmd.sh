@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORK_DIR="$(cd "$(dirname "$0")/.." && pwd)/work"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/tanebi_config.sh"
+
+WORK_DIR="$TANEBI_WORK_DIR"
 mkdir -p "$WORK_DIR"
 
 # 最大番号を取得
@@ -11,6 +14,7 @@ for dir in "$WORK_DIR"/cmd_*/; do
     num=$(basename "$dir" | sed 's/cmd_//')
     # 数値かどうか確認
     if echo "$num" | grep -qE '^[0-9]+$'; then
+      num=$((10#$num))
       if [ "$num" -gt "$max_num" ]; then
         max_num="$num"
       fi

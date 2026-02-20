@@ -9,6 +9,10 @@ import shutil
 import subprocess
 from datetime import datetime, date
 
+# Import tanebi_config for path constants
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import tanebi_config as cfg
+
 def parse_frontmatter(content):
     """Parse YAML frontmatter from markdown content."""
     lines = content.split('\n')
@@ -97,9 +101,8 @@ def evolve(results_dir, personas_dir, cmd_id):
     today = date.today().isoformat()
     now = datetime.now().isoformat()
 
-    # Derive few_shot_bank_dir from project structure
-    tanebi_root = os.path.dirname(os.path.dirname(personas_dir))
-    few_shot_bank_dir = os.path.join(tanebi_root, 'knowledge', 'few_shot_bank')
+    tanebi_root = cfg.TANEBI_ROOT
+    few_shot_bank_dir = cfg.FEW_SHOT_DIR
 
     # Collect results (with content for few-shot registration)
     results = []
@@ -289,7 +292,7 @@ def evolve(results_dir, personas_dir, cmd_id):
         if total_match:
             current_total = int(total_match.group(1))
             if current_total > 0 and current_total % 5 == 0:
-                history_dir = os.path.join(os.path.dirname(personas_dir), 'history')
+                history_dir = cfg.HISTORY_DIR
                 os.makedirs(history_dir, exist_ok=True)
                 existing = glob.glob(os.path.join(history_dir, f"{persona_id}_gen*.yaml"))
                 generation = len(existing) + 1

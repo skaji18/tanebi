@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TANEBI_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/tanebi_config.sh"
 
 if [ $# -lt 1 ]; then
   echo "Usage: $0 work/cmd_NNN" >&2
@@ -16,7 +16,7 @@ if [[ "$CMD_DIR" != /* ]]; then
 fi
 
 RESULTS_DIR="$CMD_DIR/results"
-PERSONAS_DIR="$TANEBI_ROOT/personas/active"
+PERSONAS_DIR="$TANEBI_PERSONA_DIR"
 CMD_ID=$(basename "$CMD_DIR")
 
 if [ ! -d "$RESULTS_DIR" ]; then

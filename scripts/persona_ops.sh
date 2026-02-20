@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TANEBI_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ACTIVE_DIR="$TANEBI_ROOT/personas/active"
-HISTORY_DIR="$TANEBI_ROOT/personas/history"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/tanebi_config.sh"
+
+ACTIVE_DIR="$TANEBI_PERSONA_DIR"
+HISTORY_DIR="$TANEBI_HISTORY_DIR"
 
 usage() {
     cat <<'USAGE'

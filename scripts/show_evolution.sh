@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PERSONA_DIR="${HOME}/projects/tanebi/personas/active"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/tanebi_config.sh"
+
+PERSONA_DIR="$TANEBI_PERSONA_DIR"
 
 # ─── YAML parsing helpers (pure bash/awk, no PyYAML) ───
 
