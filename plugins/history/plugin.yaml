@@ -1,0 +1,16 @@
+name: history
+version: "1.0"
+type: ui
+description: "タスク完了履歴の自動インデックス化"
+author: TANEBI
+subscribes_to:
+  - task.aggregated
+lifecycle:
+  on_init: true
+  on_event: true
+  on_destroy: false
+config:
+  enabled: true
+  max_entries: 100
+  show_domains: true
+  show_personas: true

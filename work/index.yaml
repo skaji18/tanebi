@@ -1,0 +1,6 @@
+# TANEBI タスク履歴インデックス
+# history plugin が task.aggregated イベントで自動更新する
+index:
+  version: "1.0"
+  last_updated: ""
+  tasks: []

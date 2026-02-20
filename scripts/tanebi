@@ -58,6 +58,215 @@ print(f"  {'TOTAL':<22} {total:>8,} tokens  (~{total // 4:,} chars)")
 PYEOF
     ;;
 
+  history)
+    # work/index.yaml を読んでタスク履歴を表示
+    # 使い方:
+    #   tanebi history               → 直近10タスク一覧
+    #   tanebi history <cmd_id>      → 特定タスクの詳細
+    #   tanebi history --domain <d>  → ドメインフィルタ
+    INDEX_FILE="$TANEBI_ROOT/work/index.yaml"
+    if [ ! -f "$INDEX_FILE" ]; then
+      echo "[tanebi] No history yet. Run a task first." >&2
+      exit 1
+    fi
+    CMD_ARG="${2:-}"
+    DOMAIN_ARG="${3:-}"
+    if [ "$CMD_ARG" = "--domain" ] && [ -n "$DOMAIN_ARG" ]; then
+      # ドメインフィルタ: domains フィールドに $DOMAIN_ARG を含むエントリを表示
+      python3 - "$INDEX_FILE" "$DOMAIN_ARG" <<'PYEOF'
+import yaml, sys
+with open(sys.argv[1]) as f:
+    data = yaml.safe_load(f)
+domain = sys.argv[2]
+tasks = [t for t in data['index'].get('tasks', [])
+         if domain in str(t.get('domains', ''))]
+print(f"History (domain={domain}): {len(tasks)} tasks")
+for t in tasks[-10:]:
+    print(f"  {t.get('cmd_id','?')}  {t.get('date','')[:10]}  {t.get('request_summary','')[:50]}")
+PYEOF
+    elif [ -n "$CMD_ARG" ] && [ "$CMD_ARG" != "--domain" ]; then
+      # 特定タスクの詳細
+      python3 - "$INDEX_FILE" "$CMD_ARG" <<'PYEOF'
+import yaml, sys
+with open(sys.argv[1]) as f:
+    data = yaml.safe_load(f)
+cmd_id = sys.argv[2]
+tasks = [t for t in data['index'].get('tasks', []) if t.get('cmd_id') == cmd_id]
+if not tasks:
+    print(f"[tanebi] No history for {cmd_id}")
+    sys.exit(1)
+t = tasks[-1]
+print(f"Task: {t.get('cmd_id', '?')}")
+print(f"  Date:     {t.get('date', '')}")
+print(f"  Summary:  {t.get('request_summary', '')}")
+print(f"  Subtasks: {t.get('total_subtasks', 0)}")
+print(f"  Quality:  {t.get('quality_summary', 'UNKNOWN')}")
+print(f"  Report:   {t.get('report_path', '')}")
+PYEOF
+    else
+      # 直近タスク一覧
+      python3 - "$INDEX_FILE" <<'PYEOF'
+import yaml, sys
+with open(sys.argv[1]) as f:
+    data = yaml.safe_load(f)
+tasks = data['index'].get('tasks', [])
+print(f"Task History: {len(tasks)} total")
+print(f"  {'CMD':<12} {'DATE':<12} {'SUMMARY'}")
+print(f"  {'─'*12} {'─'*12} {'─'*40}")
+for t in tasks[-10:]:
+    cid = t.get('cmd_id', '?')
+    dt  = t.get('date', '')[:10]
+    smry = t.get('request_summary', '')[:40]
+    print(f"  {cid:<12} {dt:<12} {smry}")
+if not tasks:
+    print("  (no tasks yet)")
+PYEOF
+    fi
+    ;;
+
+  persona)
+    PERSONA_SUBCMD="${2:-list}"
+    case "$PERSONA_SUBCMD" in
+      list)
+        echo "=== Active Personas ==="
+        ls "$TANEBI_PERSONA_DIR"/*.yaml 2>/dev/null | while read f; do
+          name=$(basename "$f" .yaml)
+          fitness=$(python3 -c "
+import yaml
+try:
+    d=yaml.safe_load(open('$f'))
+    print(d.get('evolution',{}).get('fitness_score','?'))
+except: print('?')" 2>/dev/null)
+          echo "  [active] $name  (fitness=$fitness)"
+        done
+        echo "=== Library Personas ==="
+        ls "$TANEBI_LIBRARY_DIR"/*.yaml 2>/dev/null | while read f; do
+          echo "  [library] $(basename "$f" .yaml)"
+        done || echo "  (empty)"
+        ;;
+      inspect)
+        PERSONA_NAME="${3:-}"
+        if [ -z "$PERSONA_NAME" ]; then
+          echo "[tanebi] Usage: tanebi persona inspect <name>" >&2; exit 1
+        fi
+        PFILE="$TANEBI_PERSONA_DIR/${PERSONA_NAME}.yaml"
+        [ -f "$PFILE" ] || PFILE="$TANEBI_LIBRARY_DIR/${PERSONA_NAME}.yaml"
+        if [ ! -f "$PFILE" ]; then
+          echo "[tanebi] Persona not found: $PERSONA_NAME" >&2; exit 1
+        fi
+        python3 - "$PFILE" <<'PYEOF'
+import yaml, sys
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f)
+print(yaml.dump(d, allow_unicode=True, default_flow_style=False))
+PYEOF
+        ;;
+      clone)
+        SRC="${3:-}"; DST="${4:-}"
+        if [ -z "$SRC" ] || [ -z "$DST" ]; then
+          echo "[tanebi] Usage: tanebi persona clone <source> <target>" >&2; exit 1
+        fi
+        exec bash "$TANEBI_ROOT/scripts/persona_ops.sh" copy "$SRC" "$DST"
+        ;;
+      merge)
+        P1="${3:-}"; P2="${4:-}"
+        if [ -z "$P1" ] || [ -z "$P2" ]; then
+          echo "[tanebi] Usage: tanebi persona merge <p1> <p2>" >&2; exit 1
+        fi
+        exec bash "$TANEBI_ROOT/scripts/persona_ops.sh" merge "$P1" "$P2"
+        ;;
+      *)
+        echo "[tanebi] Unknown persona subcommand: '$PERSONA_SUBCMD'" >&2
+        echo "[tanebi] Usage: tanebi persona [list|inspect <name>|clone <src> <dst>|merge <p1> <p2>]" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  config)
+    KEY="${2:-}"
+    VALUE="${3:-}"
+    if [ -z "$KEY" ] || [ -z "$VALUE" ]; then
+      echo "[tanebi] Usage: tanebi config <key> <value>" >&2
+      echo "[tanebi] Example: tanebi config plugins.history.enabled true" >&2
+      exit 1
+    fi
+    CONFIG_FILE="$TANEBI_ROOT/config.yaml"
+    python3 - "$CONFIG_FILE" "$KEY" "$VALUE" <<'PYEOF'
+import yaml, sys
+config_file, key_path, value = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(config_file) as f:
+    data = yaml.safe_load(f)
+# Navigate and set nested key (e.g., "plugins.history.enabled")
+keys = key_path.split('.')
+obj = data.get('tanebi', data)  # support both top-level and tanebi-nested
+# Try tanebi-nested path first
+target = data.get('tanebi', {})
+for k in keys[:-1]:
+    if k not in target:
+        target[k] = {}
+    target = target[k]
+# Convert value type
+v = value
+if v.lower() == 'true': v = True
+elif v.lower() == 'false': v = False
+elif v.isdigit(): v = int(v)
+target[keys[-1]] = v
+with open(config_file, 'w') as f:
+    yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+print(f"[tanebi] config updated: {key_path} = {value}")
+PYEOF
+    ;;
+
+  status)
+    python3 - "$TANEBI_ROOT" "$TANEBI_PERSONA_DIR" "$TANEBI_LIBRARY_DIR" <<'PYEOF'
+import yaml, sys, os, glob
+
+root, active_dir, lib_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+
+# Config
+config_file = os.path.join(root, 'config.yaml')
+with open(config_file) as f:
+    config = yaml.safe_load(f)
+tanebi_cfg = config.get('tanebi', config)
+preset = tanebi_cfg.get('preset', 'unknown')
+plugins = tanebi_cfg.get('plugins', {})
+
+# Personas
+active_personas = glob.glob(os.path.join(active_dir, '*.yaml'))
+lib_personas = glob.glob(os.path.join(lib_dir, '*.yaml'))
+
+# History
+index_file = os.path.join(root, 'work', 'index.yaml')
+recent_tasks = []
+if os.path.exists(index_file):
+    with open(index_file) as f:
+        idx = yaml.safe_load(f)
+    recent_tasks = idx.get('index', {}).get('tasks', [])[-3:]
+
+print("═══════════════════════════════════════")
+print("  TANEBI System Status")
+print("═══════════════════════════════════════")
+print(f"  Preset:          {preset}")
+print(f"  Active Personas: {len(active_personas)}")
+print(f"  Library Personas:{len(lib_personas)}")
+print("───────────────────────────────────────")
+print("  Plugins:")
+for name, cfg in sorted(plugins.items()):
+    enabled = cfg.get('enabled', False) if isinstance(cfg, dict) else False
+    status_mark = '✅' if enabled else '  '
+    print(f"    {status_mark} {name}")
+print("───────────────────────────────────────")
+print("  Recent Tasks:")
+if recent_tasks:
+    for t in recent_tasks:
+        print(f"    {t.get('cmd_id','?')}  {t.get('date','')[:10]}  {t.get('request_summary','')[:35]}")
+else:
+    print("    (no history yet)")
+print("═══════════════════════════════════════")
+PYEOF
+    ;;
+
   ""|--request|--*)
     # オリジナルのランチャー動作
     echo "[tanebi] Adapter: $TANEBI_ADAPTER_SET"
@@ -94,6 +303,10 @@ PYEOF
     echo "[tanebi]   tanebi                        — launcher (claude-native / subprocess)" >&2
     echo "[tanebi]   tanebi evolution               — show evolution history" >&2
     echo "[tanebi]   tanebi cost [cmd_id]           — show cost report" >&2
+    echo "[tanebi]   tanebi history [cmd_id|--domain <d>] — task history" >&2
+    echo "[tanebi]   tanebi persona [list|inspect|clone|merge] — persona management" >&2
+    echo "[tanebi]   tanebi config <key> <value>    — update config.yaml" >&2
+    echo "[tanebi]   tanebi status                  — system status overview" >&2
     exit 1
     ;;
 esac

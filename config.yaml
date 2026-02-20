@@ -83,6 +83,11 @@ tanebi:
       show_on_complete: true
       verbose: false
       show_fitness_trend: false
+    history:
+      enabled: true
+      max_entries: 100
+      show_domains: true
+      show_personas: true
 
   # Preset to use (minimal / standard / full)
   preset: standard
