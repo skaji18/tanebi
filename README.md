@@ -1,86 +1,113 @@
-# TANEBI（種火）
+# TANEBI — Evolving AI Agent Framework
 
-> 種火 — 小さな火種から、消えない炎へ。
-> The spark that never dies — agents that grow with every task.
+> "Use it, and it grows smarter." / 「使えば使うほど賢くなる」
 
-**進化するマルチエージェント人格フレームワーク**
+## What is TANEBI?
 
-TANEBIは、エージェントにタスク実行を重ねるたびに成長・特化する「人格」を与え、チーム全体を複利的に賢くするフレームワークです。
+TANEBI (種火 — "seed fire") is an **evolving multi-agent persona framework**. In conventional multi-agent systems, agents are disposable workers: their memory resets every session, and the 100th task starts with the same capability as the first. TANEBI changes this.
+
+At its core, TANEBI gives each agent a **Persona** — a persistent identity that grows and specializes through task execution. Success patterns are reinforced, failure patterns are recorded, and the entire team becomes compoundingly smarter over time. The Evolution Engine is the heart of the system: it drives individual agent growth and shared knowledge accumulation simultaneously.
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/skaji18/tanebi
 cd tanebi
-bash scripts/setup.sh   # 初回のみ: Seed Personaを配置
-claude
+claude  # CLAUDE.md auto-loads — TANEBI starts as your orchestrator
 ```
 
-tmux不要、プロセス管理不要、追加インフラ不要。Claude Codeさえあれば動きます。
+Three steps. No tmux, no process managers, no extra infrastructure. Just Claude Code.
 
-## TANEBIを使うと何が変わるか
-
-| 段階 | 説明 |
-|------|------|
-| **素のClaude Code** | 1セッション。記憶なし。毎回ゼロスタート |
-| **Claude Code + Task tool** | サブエージェント起動可能だが、人格なし・進化なし |
-| **TANEBI** | 進化する人格 + Few-Shot自動注入 + 適応度ベース配置 |
-
-## 核心機能
-
-- **4層人格モデル** — Identity / Knowledge / Behavior / Performance をYAMLで定義・永続化
-- **二重進化エンジン** — 個体進化（エージェントの成長）+ 知識進化（チームの学習）
-- **Few-Shot Bank** — 成功事例が自動蓄積され、次のWorkerに自動注入
-- **Persona Library** — 人格のコピー・合成・バージョン管理
-- **プラガブルモジュール** — Trust, 認知品質, 通信最適化等を後付け可能
-- **アダプター層** — claude-native / distributed / docker / cloud 等、環境を選ばない
-
-## 仕組み
+## Architecture
 
 ```mermaid
 graph TD
-    PS["Parent Session<br/>(CLAUDE.md)"]
-    D["Decompose<br/>タスク分解"]
-    E["Execute<br/>Worker並列起動"]
-    WA["Worker A<br/>(persona注入済み)"]
-    WB["Worker B"]
-    WC["Worker C"]
-    A["Aggregate<br/>結果統合"]
-    EV["Evolve<br/>Persona更新"]
+    PS["Parent Session<br/>(CLAUDE.md loaded)"]
+    D["Decompose<br/>Task decomposition<br/>+ Persona-based worker selection"]
+    E["Execute<br/>Parallel worker launch via Task tool"]
+    WA["Worker A<br/>(persona: db_specialist<br/>+ Few-Shot injected)"]
+    WB["Worker B<br/>(persona: api_designer)"]
+    WC["Worker C<br/>(persona: test_writer)"]
+    A["Aggregate<br/>Result integration → report.md"]
+    EV["Evolve<br/>Persona update + Few-Shot registration"]
 
     PS --> D --> E
     E --> WA & WB & WC
     WA & WB & WC --> A --> EV
 ```
 
-## ディレクトリ構成
+**Five-step loop**: Orchestrate → Decompose → Execute → Aggregate → Evolve. Each cycle makes the team stronger.
+
+## Persona — The Agent's Identity
+
+Every agent carries a **4-layer Persona** defined in YAML:
+
+```mermaid
+graph TD
+    L4["Layer 4: Identity<br/>Name, speech style, archetype, base model<br/>— Most stable (changes monthly)"]
+    L3["Layer 3: Knowledge<br/>Domain proficiency, Few-Shot examples, anti-patterns<br/>— Grows with every task"]
+    L2["Layer 2: Behavior<br/>Risk tolerance, detail orientation, speed vs quality<br/>— Evolves over multiple tasks"]
+    L1["Layer 1: Performance<br/>Trust score, success rate, quality average, streaks<br/>— Measured objectively per task"]
+
+    L4 --> L3 --> L2 --> L1
+
+    style L4 fill:#4a90d9,color:#fff
+    style L3 fill:#7ab648,color:#fff
+    style L2 fill:#f5a623,color:#fff
+    style L1 fill:#d0021b,color:#fff
+```
+
+Personas persist across sessions. Copy them, merge them, version them — they are the living memory of your agent team.
+
+## Evolution Engine
+
+TANEBI runs a **dual evolution** architecture:
+
+- **Individual Evolution** — Each agent's Persona evolves through selection, mutation, crossover, and fitness evaluation. Success reinforces traits; failure triggers correction.
+- **Knowledge Evolution** — A shared **Few-Shot Bank** accumulates successful task examples. New workers automatically receive relevant examples from past successes. A knowledge GC prevents bloat.
+
+The **fitness score** drives decisions:
+
+```
+fitness = 0.35 × quality + 0.30 × completion_rate + 0.20 × efficiency + 0.15 × growth_rate
+```
+
+Agents that perform well get more tasks in their domain. Agents that struggle get corrective feedback baked into their Persona. The team self-optimizes.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `bash scripts/new_cmd.sh "<task>"` | Create new task workspace |
+| `bash scripts/show_evolution.sh` | Show all Persona KPIs |
+| `bash scripts/evolve.sh <cmd_id>` | Run evolution after task completion |
+| `bash scripts/persona_ops.sh list` | List all Personas |
+| `bash scripts/persona_ops.sh copy <src> <new>` | Copy a Persona |
+
+## Project Structure
 
 ```
 tanebi/
-  CLAUDE.md              # オーケストレーター指示書
-  config.yaml            # 設定
+  CLAUDE.md              # Orchestrator instructions (auto-loaded)
+  config.yaml            # Framework configuration
   personas/
-    active/              # 現在のPersona群
-    library/             # テンプレート・スナップショット
-    history/             # バージョン履歴
+    active/              # Currently active Personas
+    library/             # Templates & snapshots
+    history/             # Version history
   knowledge/
-    few_shot_bank/       # 成功事例ライブラリ
-    episodes/            # エピソード記憶
-  work/                  # タスク作業ディレクトリ
-  templates/             # Worker/Decomposer/Aggregatorテンプレート
-  scripts/               # 進化ループ・Persona操作スクリプト
-  modules/               # プラガブルモジュール
-  docs/                  # 設計ドキュメント
+    few_shot_bank/       # Success example library
+    episodes/            # Episode memory
+  work/                  # Task workspaces (cmd_001/, cmd_002/, ...)
+  templates/             # Worker / Decomposer / Aggregator templates
+  scripts/               # Evolution & Persona operation scripts
+  modules/               # Pluggable modules (Trust, Cognitive, etc.)
+  docs/                  # Design documents
 ```
 
-## ドキュメント
+## Documentation
 
-- [設計書](docs/design.md) — アーキテクチャ全体像、人格定義、進化エンジン、MVP仕様
-
-## ステータス
-
-> **WIP** — 設計フェーズ完了。MVP実装準備中。
+- [Design Document](docs/design.md) — Full architecture, Persona spec, Evolution Engine, MVP roadmap
 
 ## License
 
-TBD
+MIT

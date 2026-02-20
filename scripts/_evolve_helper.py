@@ -6,6 +6,7 @@ import os
 import glob
 import re
 import shutil
+import subprocess
 from datetime import datetime, date
 
 def parse_frontmatter(content):
@@ -264,6 +265,24 @@ def evolve(results_dir, personas_dir, cmd_id):
             update_fitness_score(persona_path)
         except Exception as e:
             print(f"  [evolve] WARNING: fitness update failed for {persona_id}: {e}")
+
+        # Trust Module: on_task_complete
+        trust_module = os.path.join(tanebi_root, 'modules', 'trust', 'trust_module.sh')
+        if os.path.exists(trust_module):
+            overall_status = 'success' if stats['success'] == stats['total'] else 'failure'
+            overall_quality = 'GREEN' if stats['green_count'] > 0 and stats['red_count'] == 0 else \
+                              'RED' if stats['red_count'] > 0 else 'YELLOW'
+            try:
+                result = subprocess.run(
+                    ['bash', trust_module, 'on_task_complete', persona_id, overall_status, overall_quality],
+                    capture_output=True, text=True
+                )
+                if result.stdout.strip():
+                    print(f"  {result.stdout.strip()}")
+                if result.returncode != 0 and result.stderr.strip():
+                    print(f"  [evolve] trust warning: {result.stderr.strip()}")
+            except Exception as e:
+                print(f"  [evolve] WARNING: trust module call failed for {persona_id}: {e}")
 
         # --- Feature 4: Auto-snapshot every 5 tasks ---
         total_match = re.search(r'total_tasks:\s*(\d+)', content)

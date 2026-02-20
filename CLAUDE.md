@@ -47,6 +47,18 @@ Task tool の prompt として使用する:
 
 Task tool でDecomposerを起動し、出力 `work/cmd_NNN/plan.md` を待つ。
 
+### Trust Module チェック
+
+各サブタスクのPersona割り当て前に信頼スコアを検証する:
+
+```bash
+bash modules/trust/trust_module.sh on_task_assign {PERSONA_ID} {TASK_RISK_LEVEL}
+# 戻り値が1の場合は別のPersonaを選択すること
+```
+
+- `{TASK_RISK_LEVEL}` は Decomposer が plan.md で指定（low / medium / high）
+- 拒否された場合、次に適応度の高い別のPersonaで再試行する
+
 ### Step 3: EXECUTE（Worker群を並列起動）
 
 `plan.md` を Read tool で読み、各サブタスクに対して以下を実行:

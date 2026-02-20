@@ -459,12 +459,12 @@ graph TD
 
 ### 7.3 4週間ロードマップ
 
-| Week | テーマ | 主な成果物 |
-|------|--------|----------|
-| **1** | コア骨格 | CLAUDE.md、Persona YAMLスキーマ、初期Seed 2-3種、config.yaml |
-| **2** | 進化ループ基礎 | Worker テンプレート、Decompose→Execute→Aggregateフロー、Few-Shot Bank、evolve.sh |
-| **3** | 進化エンジン本体 | 適応度関数、Few-Shot自動登録、Persona自動更新、persona_ops.sh |
-| **4** | 統合・検証 | E2Eテスト、Trust Module最小実装、進化可視化、ドキュメント |
+| Week | テーマ | 主な成果物 | 状態 |
+|------|--------|----------|------|
+| **1** | コア骨格 | CLAUDE.md、Persona YAMLスキーマ、初期Seed 2-3種、config.yaml | ✅ 完了 |
+| **2** | 進化ループ基礎 | Worker テンプレート、Decompose→Execute→Aggregateフロー、Few-Shot Bank、evolve.sh | ✅ 完了 |
+| **3** | 進化エンジン本体 | 適応度関数、Few-Shot自動登録、Persona自動更新、persona_ops.sh | ✅ 完了 |
+| **4** | 統合・検証 | E2Eテスト、Trust Module最小実装、進化可視化、ドキュメント | ✅ 完了 |
 
 ---
 
