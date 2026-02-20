@@ -53,7 +53,7 @@ Persona YAMLを実際に読んで（Read tool使用）、内容に基づいて�
 ````yaml
 ---
 subtask_id: {SUBTASK_ID}
-persona: {PERSONA_NAME}
+persona: {PERSONA_ID}
 status: success  # success または failure
 quality: GREEN   # GREEN（高品質）/ YELLOW（要改善）/ RED（失敗に近い）
 domain: {DOMAIN} # タスクのドメイン分類

@@ -36,6 +36,7 @@ allowed-tools: [Read, Write, Glob]
 - サブタスクのドメインとPersonaの`knowledge.domains`を照合
 - 最も習熟度（proficiency）が高いPersonaを選択
 - 該当ドメインのPersonaがいない場合は `generalist_v1` を使用
+- **適応度スコア優先**: 同ドメインに複数の候補Personaがいる場合、`evolution.fitness_score` が最高のPersonaを優先せよ。fitness_scoreが未設定の場合は0.5として扱う
 
 ## Step 4: plan.md 出力
 

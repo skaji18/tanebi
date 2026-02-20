@@ -105,7 +105,16 @@ cat personas/active/{persona_id}.yaml
 ```
 
 `evolve.sh` はWorker結果の YAML frontmatter を解析し、対応するPersonaのパフォーマンス統計を
-自動更新する。GREEN品質のタスクはFew-Shot候補としてログに出力される（Week 3で自動登録予定）。
+自動更新する。GREEN品質のタスクはFew-Shot Bankへ自動登録される。
+
+**evolve.sh が実行する進化ステップ:**
+
+1. **パフォーマンス更新**: `total_tasks`, `success_rate`, `last_task_date` を更新
+2. **失敗補正**: 失敗したドメインの `proficiency` を -0.02 調整
+3. **行動パラメータ調整**: GREEN/RED品質に基づき `risk_tolerance` を微調整
+4. **適応度スコア計算**: `scripts/_fitness.py` の `update_fitness_score()` を呼び出し、`evolution.fitness_score` を更新。適応度 = w1*品質 + w2*完了率 + w3*効率 + w4*成長率（直近20タスクのスライディングウィンドウ）
+5. **自動スナップショット**: `total_tasks` が5の倍数に達したら `personas/history/` にスナップショットを保存
+6. **Few-Shot自動登録**: GREEN+success の結果を `knowledge/few_shot_bank/{domain}/` に登録（ドメインあたり最大20件）
 
 ## パス受け渡し係原則（CRITICAL）
 
@@ -130,13 +139,27 @@ Persona が存在しない種類のタスク → `generalist` として汎用Wor
 
 **Decomposerへの指示**: `personas/active/` のYAMLファイル名を渡し、サブタスクの内容とPersonaのdomain知識を照合して最適なPersonaを選択させる。
 
+### Persona自動選択（適応度ベース）
+
+各サブタスクのドメインに対して、最も適応度の高いPersonaを自動選択する:
+
+1. サブタスクのドメインを特定（例: backend, frontend, testing等）
+2. `personas/active/` の全Personaを確認
+3. 各Personaの `evolution.fitness_score` を読む
+4. 同ドメイン対応のPersonaのうち、fitness_score が最高のものを選択
+5. fitness_scoreが未設定（新規Persona）の場合は0.5として扱う
+6. 適合するPersonaがない場合はgeneralist_v1をフォールバックとして使用
+
+Decomposerが `personas/active/*.yaml` を読む際、`knowledge.domains` の照合に加えて
+`evolution.fitness_score` を参照し、同ドメインで複数候補がある場合はスコア最高のPersonaを優先する。
+
 ## 進化フェーズ（Week 2以降）
 
 | Week | テーマ | 状態 |
 |------|--------|------|
 | 1 | コア骨格: CLAUDE.md + Persona YAMLスキーマ + Seed 2-3種 | ✅ 完了 |
 | 2 | 進化ループ基礎: Workerテンプレート + Few-Shot Bank + evolve.sh | ✅ 完了 |
-| 3 | 進化エンジン本体: 適応度関数 + Persona自動更新 | 予定 |
+| 3 | 進化エンジン本体: 適応度関数 + Persona自動更新 | ✅ 完了 |
 | 4 | 統合・検証: E2Eテスト + Trust Module + 進化可視化 | 予定 |
 
 Week 1-2完了。Step 5（EVOLVE）は `bash scripts/evolve.sh` として実装済み。
