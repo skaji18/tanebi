@@ -3,6 +3,8 @@
 # Usage:
 #   bash scripts/tanebi "タスクの説明"
 #   bash scripts/tanebi --request work/cmd_NNN/request.md
+#   bash scripts/tanebi evolution
+#   bash scripts/tanebi cost [cmd_id]
 
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/tanebi_config.sh"
@@ -10,29 +12,88 @@ source "$(dirname "${BASH_SOURCE[0]}")/tanebi_config.sh"
 # Strip trailing CR in case config.yaml has CRLF line endings
 TANEBI_ADAPTER_SET="${TANEBI_ADAPTER_SET//$'\r'/}"
 
-echo "[tanebi] Adapter: $TANEBI_ADAPTER_SET"
-echo "[tanebi] Root: $TANEBI_ROOT"
+SUBCMD="${1:-}"
 
-case "$TANEBI_ADAPTER_SET" in
-  claude-native)
-    echo "[tanebi] claude-native adapter selected."
-    echo "[tanebi] 以下のコマンドで起動してください:"
-    echo ""
-    echo "  cd \"$TANEBI_ROOT\" && claude"
-    echo ""
-    echo "[tanebi] CLAUDE.md が自動読み込みされ、TANEBI オーケストレーターが起動します。"
+case "$SUBCMD" in
+  evolution)
+    # show_evolution.sh のラッパー（既存機能活用）
+    exec bash "$TANEBI_ROOT/scripts/show_evolution.sh" "${@:2}"
     ;;
-  subprocess)
-    ORCHESTRATOR="$TANEBI_ROOT/adapters/subprocess/orchestrator.sh"
-    if [ ! -f "$ORCHESTRATOR" ]; then
-      echo "[tanebi] ERROR: orchestrator.sh not found: $ORCHESTRATOR" >&2
+
+  cost)
+    # 指定 cmd_id のコストレポートを表示。未指定なら直近タスク
+    CMD_ID="${2:-}"
+    if [ -z "$CMD_ID" ]; then
+      CMD_ID=$(ls -t "$TANEBI_WORK_DIR" 2>/dev/null | grep '^cmd_' | head -1 || true)
+    fi
+    if [ -z "$CMD_ID" ]; then
+      echo "[tanebi] No task found in $TANEBI_WORK_DIR" >&2
       exit 1
     fi
-    exec bash "$ORCHESTRATOR" "$@"
+    COST_FILE="$TANEBI_WORK_DIR/$CMD_ID/cost.yaml"
+    if [ ! -f "$COST_FILE" ]; then
+      echo "[tanebi] No cost data for $CMD_ID (looked in $COST_FILE)" >&2
+      exit 1
+    fi
+    python3 - "$COST_FILE" <<'PYEOF'
+import yaml, sys
+
+with open(sys.argv[1]) as f:
+    data = yaml.safe_load(f)
+
+cost = data['cost']
+bd = cost['breakdown']
+total = cost.get('total_tokens', 0)
+
+print(f"Cost Report: {cost['cmd_id']}")
+print(f"  {'Decompose':<22} {bd.get('decompose', {}).get('tokens', 0):>8,} tokens")
+for w in bd.get('workers', []):
+    sid = w.get('subtask_id', '?')
+    toks = w.get('tokens', 0)
+    print(f"  {sid:<22} {toks:>8,} tokens")
+print(f"  {'Aggregate':<22} {bd.get('aggregate', {}).get('tokens', 0):>8,} tokens")
+print(f"  {'Evolve':<22} {bd.get('evolve', {}).get('tokens', 0):>8,} tokens")
+print(f"  {'─' * 33}")
+print(f"  {'TOTAL':<22} {total:>8,} tokens  (~{total // 4:,} chars)")
+PYEOF
     ;;
+
+  ""|--request|--*)
+    # オリジナルのランチャー動作
+    echo "[tanebi] Adapter: $TANEBI_ADAPTER_SET"
+    echo "[tanebi] Root: $TANEBI_ROOT"
+
+    case "$TANEBI_ADAPTER_SET" in
+      claude-native)
+        echo "[tanebi] claude-native adapter selected."
+        echo "[tanebi] 以下のコマンドで起動してください:"
+        echo ""
+        echo "  cd \"$TANEBI_ROOT\" && claude"
+        echo ""
+        echo "[tanebi] CLAUDE.md が自動読み込みされ、TANEBI オーケストレーターが起動します。"
+        ;;
+      subprocess)
+        ORCHESTRATOR="$TANEBI_ROOT/adapters/subprocess/orchestrator.sh"
+        if [ ! -f "$ORCHESTRATOR" ]; then
+          echo "[tanebi] ERROR: orchestrator.sh not found: $ORCHESTRATOR" >&2
+          exit 1
+        fi
+        exec bash "$ORCHESTRATOR" "$@"
+        ;;
+      *)
+        echo "[tanebi] ERROR: Unknown adapter_set: '$TANEBI_ADAPTER_SET'" >&2
+        echo "[tanebi] config.yaml の adapter_set を 'claude-native' または 'subprocess' に設定してください" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
   *)
-    echo "[tanebi] ERROR: Unknown adapter_set: '$TANEBI_ADAPTER_SET'" >&2
-    echo "[tanebi] config.yaml の adapter_set を 'claude-native' または 'subprocess' に設定してください" >&2
+    echo "[tanebi] Unknown subcommand: '$SUBCMD'" >&2
+    echo "[tanebi] Usage:" >&2
+    echo "[tanebi]   tanebi                        — launcher (claude-native / subprocess)" >&2
+    echo "[tanebi]   tanebi evolution               — show evolution history" >&2
+    echo "[tanebi]   tanebi cost [cmd_id]           — show cost report" >&2
     exit 1
     ;;
 esac

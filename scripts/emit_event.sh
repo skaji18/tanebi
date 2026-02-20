@@ -7,7 +7,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tanebi_config.sh"
 
 CMD_DIR="${1:?usage: emit_event.sh <cmd_dir> <event_type> '<payload>'}"
 EVENT_TYPE="${2:?event_type required}"
-PAYLOAD="${3:-{}}"
+_default_payload='{}'
+PAYLOAD="${3:-$_default_payload}"
 
 EVENTS_DIR="$CMD_DIR/events"
 mkdir -p "$EVENTS_DIR"

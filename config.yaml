@@ -73,6 +73,16 @@ tanebi:
       enabled: true
       plan_review: true
       auto_approve_timeout: 0
+    cost:
+      enabled: true
+      budget: null
+      show_per_subtask: true
+      show_cumulative: true
+    evolution:
+      enabled: true
+      show_on_complete: true
+      verbose: false
+      show_fitness_trend: false
 
   # Preset to use (minimal / standard / full)
   preset: standard

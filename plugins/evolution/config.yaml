@@ -1,0 +1,3 @@
+show_on_complete: true
+verbose: false
+show_fitness_trend: false

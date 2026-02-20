@@ -1,0 +1,23 @@
+name: evolution
+version: "1.0"
+type: ui
+description: "Persona進化状況のリアルタイム可視化"
+author: TANEBI
+subscribes_to:
+  - evolution.started
+  - evolution.persona_updated
+  - evolution.few_shot_registered
+  - evolution.completed
+lifecycle:
+  on_init: true
+  on_event: true
+  on_destroy: false
+feedback_commands:
+  - name: adjust_parameter
+    param: behavior
+    description: "Behaviorパラメータの手動調整"
+config:
+  enabled: true
+  show_on_complete: true
+  verbose: false
+  show_fitness_trend: false

@@ -1,0 +1,23 @@
+name: cost
+version: "1.0"
+type: ui
+description: "タスク毎のコスト（トークン使用量）追跡・表示"
+author: TANEBI
+subscribes_to:
+  - cost.token_used
+  - worker.completed
+  - task.aggregated
+  - evolution.completed
+lifecycle:
+  on_init: true
+  on_event: true
+  on_destroy: false
+feedback_commands:
+  - name: adjust_parameter
+    param: cost_budget
+    description: "コスト予算の上限調整"
+config:
+  enabled: true
+  budget: null
+  show_per_subtask: true
+  show_cumulative: true

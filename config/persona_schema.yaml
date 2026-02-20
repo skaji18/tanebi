@@ -163,6 +163,19 @@ fields:
       type: map[string, float]
       description: "ドメイン別成功率"
       default: {}
+    cost_metrics:
+      avg_tokens_per_task:
+        type: number
+        description: "タスク毎の平均トークン使用量"
+        default: 0
+      total_tokens:
+        type: number
+        description: "累計トークン使用量"
+        default: 0
+      cost_efficiency:
+        type: number
+        description: "コスト効率 = quality_score / tokens (高いほど良い)"
+        default: 0.0
 
   # Evolution Metadata（進化メタデータ）- full粒度のみ
   evolution:
