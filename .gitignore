@@ -20,5 +20,8 @@ Thumbs.db
 .idea/
 .vscode/
 
+# TANEBI runtime output
+reports/
+
 # Claude Code
 .claude/

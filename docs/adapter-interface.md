@@ -1,6 +1,6 @@
 # TANEBI アダプターインターフェース仕様書
 
-> 本文書は [design.md](design.md) Section 3 の詳細仕様である。
+> 本文書は [design.md](design.md) Section 8 の詳細仕様である。
 > アダプター実装者はこの仕様に準拠すること。
 
 ---

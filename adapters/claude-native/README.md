@@ -9,9 +9,10 @@ Claude CodeのネイティブTASK機能（CLAUDE.md + Task tool）を使って�
 - シングルプロセスで動作
 
 ## 有効化
-tanebi_config.yaml:
+config.yaml:
 ```yaml
-adapter_set: claude-native
+tanebi:
+  adapter_set: claude-native
 ```
 
 ## ファイル
