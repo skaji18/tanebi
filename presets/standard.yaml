@@ -1,0 +1,13 @@
+# presets/standard.yaml
+# バランス型。進捗表示 + 承認ゲート有効。
+name: standard
+description: "標準構成。進捗表示と承認ゲートを有効化。"
+plugins:
+  trust:
+    enabled: true
+  progress:
+    enabled: true
+  approval:
+    enabled: true
+    plan_review: true
+    auto_approve_timeout: 0

@@ -1,0 +1,12 @@
+# presets/minimal.yaml
+# MVP完全互換。プラグイン無効。
+name: minimal
+description: "最小構成。チャットのみ。既存MVPと完全互換。"
+plugins:
+  trust:
+    enabled: false
+  progress:
+    enabled: false
+  approval:
+    enabled: false
+    plan_review: false

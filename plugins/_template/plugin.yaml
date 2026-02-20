@@ -1,0 +1,14 @@
+name: my_plugin
+version: "1.0"
+type: ui   # core または ui
+description: "プラグインの説明"
+author: your-name
+subscribes_to:
+  - task.created    # 購読するイベントを列挙
+lifecycle:
+  on_init: true
+  on_event: true
+  on_destroy: false
+config:
+  enabled: true
+  # カスタム設定をここに追加

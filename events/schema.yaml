@@ -1,0 +1,122 @@
+# TANEBI Event Schema Definition
+# 全15種のイベントスキーマ定義
+# See: docs/design.md Section 4.2
+
+events:
+  # ===== タスク実行イベント =====
+
+  task.created:
+    description: "タスク作成時"
+    payload:
+      cmd_id: string
+      request_summary: string
+      timestamp: string  # ISO8601
+
+  task.decomposed:
+    description: "Decompose完了時"
+    payload:
+      cmd_id: string
+      plan:
+        subtasks: array
+        waves: integer
+        persona_assignments: array
+
+  worker.started:
+    description: "Worker起動時"
+    payload:
+      cmd_id: string
+      subtask_id: string
+      persona_id: string
+      wave: integer
+
+  worker.progress:
+    description: "Worker中間出力時"
+    payload:
+      cmd_id: string
+      subtask_id: string
+      message: string
+      percent: "number?"  # optional
+
+  worker.completed:
+    description: "Worker完了時"
+    payload:
+      cmd_id: string
+      subtask_id: string
+      status: "enum[success, failure]"
+      quality: "enum[GREEN, YELLOW, RED]"
+      domain: string
+
+  wave.completed:
+    description: "Wave内全Worker完了"
+    payload:
+      cmd_id: string
+      wave: integer
+      results_summary: string
+
+  task.aggregated:
+    description: "Aggregator完了後"
+    payload:
+      cmd_id: string
+      report_path: string
+      quality_summary: string
+
+  # ===== 進化イベント =====
+
+  evolution.started:
+    description: "evolve.sh開始時"
+    payload:
+      cmd_id: string
+
+  evolution.persona_updated:
+    description: "Persona更新時"
+    payload:
+      persona_id: string
+      field: string
+      old_value: number
+      new_value: number
+      reason: string
+
+  evolution.few_shot_registered:
+    description: "Few-Shot登録時"
+    payload:
+      domain: string
+      subtask_id: string
+      quality: string
+
+  evolution.completed:
+    description: "evolve.sh完了時"
+    payload:
+      cmd_id: string
+      personas_updated: array
+      few_shots_added: integer
+
+  # ===== システムイベント =====
+
+  trust.check:
+    description: "Trust Module判定時"
+    payload:
+      persona_id: string
+      task_risk: string
+      decision: "enum[allow, deny]"
+
+  cost.token_used:
+    description: "トークン消費推定時"
+    payload:
+      cmd_id: string
+      subtask_id: "string?"  # optional
+      tokens_estimated: integer
+
+  error.worker_failed:
+    description: "Worker失敗時"
+    payload:
+      cmd_id: string
+      subtask_id: string
+      error_detail: string
+
+  approval.requested:
+    description: "承認待ち時"
+    payload:
+      cmd_id: string
+      approval_type: "enum[plan_review, wave_gate, danger_op, budget_exceeded]"
+      data: object
+      timeout_seconds: "number?"  # null = 無期限

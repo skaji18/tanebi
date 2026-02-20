@@ -1,0 +1,21 @@
+name: approval
+version: "1.0"
+type: ui
+description: "計画承認ゲート — Decompose後の計画確認と実行中の介入"
+author: TANEBI
+subscribes_to:
+  - task.decomposed
+  - approval.requested
+lifecycle:
+  on_init: true
+  on_event: true
+  on_destroy: false
+config:
+  plan_review: true        # Decompose後に計画を表示して承認を求める
+  auto_approve_timeout: 0  # 0=無制限待機, N=N秒後に自動承認
+feedback_commands:
+  - approve_plan
+  - reject_plan
+  - modify_plan
+  - approve_wave
+  - abort_task

@@ -24,6 +24,14 @@ claude-native アダプター（MVP）: `git clone → cd tanebi → claude` で
 
 ## タスク実行フロー（5ステップ）
 
+### Step 0: Plugin初期化
+
+タスク実行前にプラグインシステムを初期化する:
+
+```bash
+bash scripts/component_loader.sh init
+```
+
 ### Step 1: REQUEST受取
 
 ユーザーのタスク依頼を受け取る。
@@ -33,6 +41,13 @@ bash scripts/new_cmd.sh   # → work/cmd_NNN/ を作成
 ```
 
 ユーザー依頼内容を `work/cmd_NNN/request.md` に保存。
+
+**イベント発火**: REQUEST保存後にtask.createdイベントを発火する:
+
+```bash
+bash scripts/emit_event.sh "work/cmd_NNN" task.created \
+  "{cmd_id: cmd_NNN, request_summary: '<依頼内容の1行要約>', timestamp: $(date -Iseconds)}"
+```
 
 ### Step 2: DECOMPOSE（Decomposerに委譲）
 
@@ -46,6 +61,14 @@ Task tool の prompt として使用する:
 - `{TIMESTAMP}` → ISO8601形式の現在時刻
 
 Task tool でDecomposerを起動し、出力 `work/cmd_NNN/plan.md` を待つ。
+
+**イベント発火**: Decomposer完了後にtask.decomposedイベントを発火する:
+
+```bash
+bash scripts/emit_event.sh "work/cmd_NNN" task.decomposed \
+  "{cmd_id: cmd_NNN, plan_path: work/cmd_NNN/plan.md, subtask_count: N, timestamp: $(date -Iseconds)}"
+# 承認ゲート（approval plugin が処理）
+```
 
 ### Trust Module チェック
 
@@ -83,9 +106,23 @@ bash modules/trust/trust_module.sh on_task_assign {PERSONA_ID} {TASK_RISK_LEVEL}
 
 **Waveベースの並列実行:**
 
+**イベント発火**: 各Worker実行前後にイベントを発火する:
+
+```bash
+# Worker開始前
+bash scripts/emit_event.sh "work/cmd_NNN" worker.started \
+  "{subtask_id: SUBTASK_ID, persona_id: PERSONA_ID, wave: WAVE_NUM}"
+```
+
 - 同一wave内のサブタスク → **同一メッセージで複数 Task tool 呼び出し**（並列起動）
 - Wave N が全て完了してから Wave N+1 を開始
 - 出力先: `work/cmd_NNN/results/{subtask_id}.md`
+
+```bash
+# Worker完了後
+bash scripts/emit_event.sh "work/cmd_NNN" worker.completed \
+  "{subtask_id: SUBTASK_ID, persona_id: PERSONA_ID, quality: GREEN}"
+```
 
 ### Step 4: AGGREGATE（Aggregatorに委譲）
 
@@ -99,6 +136,13 @@ Task tool の prompt として使用する:
 
 **パス受け渡し係原則（再確認）**: オーケストレーター自身は `results/` ファイルの内容を読まない。
 Aggregator にディレクトリパスを渡すだけ。Aggregator が内容を読んで統合レポートを生成する。
+
+**イベント発火**: Aggregator完了後にtask.aggregatedイベントを発火する:
+
+```bash
+bash scripts/emit_event.sh "work/cmd_NNN" task.aggregated \
+  "{cmd_id: cmd_NNN, report_path: work/cmd_NNN/report.md, timestamp: $(date -Iseconds)}"
+```
 
 ### Step 5: EVOLVE（進化ループ）
 

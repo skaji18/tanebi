@@ -1,0 +1,19 @@
+name: trust
+version: "1.0"
+type: core
+description: "Trust Module — Personaの信頼スコアに基づきタスク割り当てを制御"
+author: TANEBI
+subscribes_to:
+  - trust.check
+  - worker.completed
+  - evolution.completed
+lifecycle:
+  on_init: true
+  on_event: true
+  on_destroy: false
+config:
+  min_score_for_high_risk: 30
+  score_on_success_green: 5
+  score_on_success_yellow: 2
+  score_on_failure: -10
+  initial_score: 50

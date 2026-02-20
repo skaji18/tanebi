@@ -1,0 +1,21 @@
+name: progress
+version: "1.0"
+type: ui
+description: "Worker実行状況のリアルタイム進捗表示"
+author: TANEBI
+subscribes_to:
+  - task.created
+  - task.decomposed
+  - worker.started
+  - worker.progress
+  - worker.completed
+  - wave.completed
+  - task.aggregated
+  - error.worker_failed
+lifecycle:
+  on_init: true
+  on_event: true
+  on_destroy: true
+config:
+  show_timestamps: true
+  show_wave_summary: true

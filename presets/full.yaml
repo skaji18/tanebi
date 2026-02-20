@@ -1,0 +1,15 @@
+# presets/full.yaml
+# パワーユーザー向け。全プラグイン有効。
+name: full
+description: "フル構成。全プラグイン有効。パワーユーザー向け。"
+plugins:
+  trust:
+    enabled: true
+  progress:
+    enabled: true
+    show_timestamps: true
+    show_wave_summary: true
+  approval:
+    enabled: true
+    plan_review: true
+    auto_approve_timeout: 0

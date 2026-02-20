@@ -28,6 +28,8 @@ cmd_dir="$WORK_DIR/cmd_${next_num}"
 
 # ディレクトリ作成
 mkdir -p "${cmd_dir}/results"
+mkdir -p "${cmd_dir}/events"
+mkdir -p "${cmd_dir}/feedback"
 
 # テンプレートファイル作成
 cat > "${cmd_dir}/request.md" <<'TMPL'

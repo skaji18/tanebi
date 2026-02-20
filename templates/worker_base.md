@@ -72,6 +72,21 @@ duration_estimate: "short"  # short（<5min）/ medium（5-15min）/ long（>15m
 [判断過程・注意点・課題があれば記載]
 ````
 
+## 進捗報告（TANEBI_PROGRESS）
+
+作業の重要なマイルストーンで以下の形式で進捗を報告せよ:
+
+```
+TANEBI_PROGRESS: <メッセージ>
+```
+
+このマーカーはオーケストレーターが検知し、progress pluginに転送する。
+
+例:
+- `TANEBI_PROGRESS: ファイル分析完了（3/5ファイル）`
+- `TANEBI_PROGRESS: コード生成開始`
+- `TANEBI_PROGRESS: テスト実行中`
+
 ## 注意事項
 
 - Personaの口調・スタイルを実際に体現すること

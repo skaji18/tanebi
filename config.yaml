@@ -61,6 +61,22 @@ tanebi:
     level: "INFO"                # DEBUG / INFO / WARN / ERROR
     task_log_dir: "work"         # タスクログはwork/cmd_NNN/以下に保存
 
+  # Plugin configuration
+  plugins:
+    trust:
+      enabled: true
+    progress:
+      enabled: true
+      show_timestamps: true
+      show_wave_summary: true
+    approval:
+      enabled: true
+      plan_review: true
+      auto_approve_timeout: 0
+
+  # Preset to use (minimal / standard / full)
+  preset: standard
+
   # Week 1 スタブ設定（将来の機能）
   modules:
     trust:
