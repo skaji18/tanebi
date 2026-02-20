@@ -1,16 +1,34 @@
 # subprocess Adapter
 
-## ステータス: 未実装（cmd_020で実装予定）
+## 概要
+`claude -p` をサブプロセスとして起動してワーカーを実行するアダプター。
 
-TANEBIのsubprocessアダプター。
-`claude -p` をサブプロセスとして起動してワーカーを実行する。
+## claude-native との違い
+| 観点 | claude-native | subprocess |
+|------|--------------|------------|
+| オーケストレーター | CLAUDE.md | orchestrator.sh |
+| ワーカー起動 | Task tool | `claude -p` |
+| 並列性 | Task tool制限内 | OSプロセスレベル |
+| コンテキスト | 親セッションに蓄積 | 各ワーカー完全分離 |
 
-## 特徴（予定）
-- プロセス分離による安全性
-- 並列実行が可能
-- コスト管理がしやすい
+## 使い方
+```bash
+# config.yaml で adapter_set を変更
+# adapter_set: subprocess
 
-## 実装予定の機能
-- orchestrator.sh: サブプロセス起動・管理
-- worker_runner.sh: ワーカー実行ラッパー
-- result_collector.sh: 結果収集
+# タスクを実行
+bash scripts/tanebi "タスクの説明"
+# または
+bash adapters/subprocess/orchestrator.sh "タスクの説明"
+```
+
+## ファイル構成
+- orchestrator.sh: メインオーケストレーター（5ステップ実行）
+- run_worker.sh: claude -p ラッパー
+- expand_template.sh: テンプレート展開
+- parse_plan.sh: plan.md パーサー
+
+## 制限事項
+- claude CLIが必要（`claude --version` で確認）
+- 非対話的実行のため、ワーカーの対話的な権限承認不可
+- `--permission-mode acceptEdits` を使用

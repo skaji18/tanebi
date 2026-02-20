@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# TANEBI ランチャー — adapter_set に応じてアダプターを起動する
+# Usage:
+#   bash scripts/tanebi "タスクの説明"
+#   bash scripts/tanebi --request work/cmd_NNN/request.md
+
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/tanebi_config.sh"
+
+# Strip trailing CR in case config.yaml has CRLF line endings
+TANEBI_ADAPTER_SET="${TANEBI_ADAPTER_SET//$'\r'/}"
+
+echo "[tanebi] Adapter: $TANEBI_ADAPTER_SET"
+echo "[tanebi] Root: $TANEBI_ROOT"
+
+case "$TANEBI_ADAPTER_SET" in
+  claude-native)
+    echo "[tanebi] claude-native adapter selected."
+    echo "[tanebi] 以下のコマンドで起動してください:"
+    echo ""
+    echo "  cd \"$TANEBI_ROOT\" && claude"
+    echo ""
+    echo "[tanebi] CLAUDE.md が自動読み込みされ、TANEBI オーケストレーターが起動します。"
+    ;;
+  subprocess)
+    ORCHESTRATOR="$TANEBI_ROOT/adapters/subprocess/orchestrator.sh"
+    if [ ! -f "$ORCHESTRATOR" ]; then
+      echo "[tanebi] ERROR: orchestrator.sh not found: $ORCHESTRATOR" >&2
+      exit 1
+    fi
+    exec bash "$ORCHESTRATOR" "$@"
+    ;;
+  *)
+    echo "[tanebi] ERROR: Unknown adapter_set: '$TANEBI_ADAPTER_SET'" >&2
+    echo "[tanebi] config.yaml の adapter_set を 'claude-native' または 'subprocess' に設定してください" >&2
+    exit 1
+    ;;
+esac
