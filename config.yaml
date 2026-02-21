@@ -3,6 +3,9 @@
 
 tanebi:
   version: "1.0"
+  # 新設計では tanebi.ports を使用（Outbound Port）。
+  # Inbound Callback は固定API仕様（scripts/tanebi-callback.sh）であり、config設定不要。
+  # このフィールドは互換性のために残存（Phase 4で削除予定）。
   adapter_set: "claude-native"
 
   # アダプター設定
@@ -88,6 +91,38 @@ tanebi:
       max_entries: 100
       show_domains: true
       show_personas: true
+
+  # === コマンド設定モデル ===
+  # 各PortはTANEBIコアが外部に呼び出す際のコマンドを定義する。
+  # TANEBIコアは command_executor.sh を通じてこのコマンドを実行する。
+  # {placeholder} はcommand_executorが実引数に置換する。
+  ports:
+    worker_launch:
+      decompose:
+        command: "builtin:task_tool"
+        args:
+          role: "decomposer"
+          context_file: "{context_file}"
+          plan_file: "{plan_file}"
+      execute:
+        command: "builtin:task_tool"
+        args:
+          role: "worker"
+          task_file: "{task_file}"
+          persona_file: "{persona_file}"
+          result_file: "{result_file}"
+    event_emit:
+      command: "bash scripts/emit_event.sh {event_type} '{payload}'"
+    state_read:
+      command: "cat {resource_path}"
+    state_write:
+      command: "tee {resource_path} > /dev/null"
+    knowledge_read:
+      command: "ls knowledge/few_shot_bank/{domain}/"
+    security_check:
+      command: "bash modules/trust/trust_module.sh check {task_type}"
+    security_update:
+      command: "bash modules/trust/trust_module.sh update {agent_id} {result}"
 
   # Preset to use (minimal / standard / full)
   preset: standard

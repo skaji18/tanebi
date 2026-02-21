@@ -1,0 +1,3 @@
+# TANEBI Python dependencies
+# venv セットアップ: scripts/setup.sh を実行してください
+pyyaml>=6.0

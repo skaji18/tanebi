@@ -52,7 +52,7 @@ graph TD
     subgraph Foundation["Foundation Layer"]
         PS["Persona Store"]
         EB["Event Bus"]
-        AIL["Adapter Interfaces<br/>IF-001 ~ IF-005"]
+        AIL["Adapter Interfaces<br/>Command-based Config Model"]
     end
 
     Shell --> Core --> Foundation
@@ -145,7 +145,13 @@ Agents that perform well get more tasks in their domain. Agents that struggle re
 
 ## Documentation
 
-- **[Design Document](docs/design.md)** -- Full architecture specification, Persona schema, Evolution Engine details, plugin system, adapter interfaces, and implementation roadmap
+- **[Design Document](docs/design.md)** -- Full architecture specification, Persona schema, Evolution Engine details, plugin system, command-based config model, and implementation roadmap
+- **[Adapter Guide](docs/adapter-guide.md)** -- アダプター実装者向け詳細ガイド（コマンド設定モデル）
+
+### 読者別ガイド
+- **TANEBIを使う方**: このREADME → Quick Start → docs/design.md
+- **アダプターを実装する方**: docs/adapter-guide.md
+- **TANEBIコアに貢献する方**: docs/design.md + docs/adapter-guide.md
 
 ## License
 

@@ -16,7 +16,8 @@ claude-native アダプター（MVP）: `git clone → cd tanebi → claude` で
 ## セッション開始時の手順
 
 ```
-1. config.yaml を読み込む（adapter_set / max_parallel_workers / default_model を確認）
+1. config.yaml を読み込む（tanebi.ports / max_parallel_workers / default_model を確認）
+   # DEPRECATED: adapter_set はコマンド設定モデルへ移行中。tanebi.ports参照。
 2. personas/active/ をカウント → 利用可能なPersona数を表示
 3. work/ をカウント → 前回のコマンド数を表示
 4. 「タスクを入力してください」と案内する
@@ -219,3 +220,8 @@ Decomposerが `personas/active/*.yaml` を読む際、`knowledge.domains` の照
 | 4 | 統合・検証: E2Eテスト + Trust Module + 進化可視化 | 予定 |
 
 Week 1-2完了。Step 5（EVOLVE）は `bash scripts/evolve.sh` として実装済み。
+
+## 参考ドキュメント
+
+- 詳細なアダプター実装ガイドは `docs/adapter-guide.md` を参照
+- フレームワーク全体設計は `docs/design.md` を参照

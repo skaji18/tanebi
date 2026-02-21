@@ -31,4 +31,27 @@ mkdir -p "$TANEBI_ROOT/knowledge/episodes"
 mkdir -p "$TANEBI_ROOT/knowledge/few_shot_bank"
 mkdir -p "$TANEBI_ROOT/personas/history"
 
+# === Python venv セットアップ (cmd_032) ===
+echo "Python仮想環境をセットアップ中..."
+
+# venv が存在するかチェック（冪等）
+if [ -d "${TANEBI_ROOT}/.venv" ]; then
+    echo "  .venv/ は既に存在します。スキップ。"
+else
+    echo "  .venv/ を作成します..."
+    python3 -m venv "${TANEBI_ROOT}/.venv"
+    echo "  .venv/ 作成完了。"
+fi
+
+# requirements.txt のインストール（差分インストール・冪等）
+if [ -f "${TANEBI_ROOT}/requirements.txt" ]; then
+    echo "  requirements.txt をインストール..."
+    "${TANEBI_ROOT}/.venv/bin/pip" install -q -r "${TANEBI_ROOT}/requirements.txt"
+    echo "  パッケージインストール完了。"
+fi
+
+echo "Python venv セットアップ完了。"
+echo "  使用方法: source ${TANEBI_ROOT}/.venv/bin/activate"
+echo "  または: ${TANEBI_ROOT}/.venv/bin/python3 script.py"
+
 echo "[setup] Done. $copied persona(s) initialized."

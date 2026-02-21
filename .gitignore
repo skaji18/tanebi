@@ -20,11 +20,13 @@ Thumbs.db
 .idea/
 .vscode/
 
-# TANEBI runtime output
+# 内部プロセスログ・アーカイブ（公開リポジトリには含めない）
+docs/archive/
 reports/
 
 # Python
 __pycache__/
+.venv/
 
 # Claude Code
 .claude/

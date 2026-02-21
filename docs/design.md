@@ -85,7 +85,7 @@ graph TD
     end
 
     subgraph FL["Foundation Layer (Layer 1)"]
-        AIL["Adapter Interface Layer<br/>IF-001〜IF-005"]
+        AIL["Adapter Interface Layer<br/>コマンド設定モデル（Outbound Port + Inbound Callback）"]
         PS["Persona Store"]
         CEB["Core Event Bus"]
     end
@@ -105,7 +105,7 @@ graph TD
 
 | コンポーネント | 責務 | claude-native実装 |
 |--------------|------|------------------|
-| Adapter Interface Layer | 5種のアダプターIF（Section 8） | Task tool + ファイルベース |
+| Adapter Interface Layer | コマンド設定モデルによるOutbound Port + Inbound Callback（Section 8） | config.yamlのコマンド定義 + command_executor.sh |
 | Persona Store | 人格YAMLの読み書き・バージョン管理 | `personas/` ディレクトリ |
 | Core Event Bus | イベントルーティング。プラグインとEvolution Coreを疎結合に接続 | ファイルベースイベントログ |
 
@@ -1008,153 +1008,85 @@ knowledge/few_shot_bank/
 
 ## 8. アダプターインターフェース
 
-### 8.1 概要
+### 8.1 設計思想：コマンド設定モデル
 
-TANEBIと実行環境をつなぐ5種のアダプターインターフェース。
+TANEBIは外部システムとの連携を「設定ファイルに書いたコマンドを実行するだけ」で実現する。
+TANEBIコア内部にアダプター名や分岐ロジックは存在しない。
+**設定ファイル自体がアダプターである。**
 
-```
-TANEBI Core（環境非依存）
-    ↓ 5つのインターフェース（IF-001〜IF-005）
-Adapter（環境固有の実装）
-    ↓
-実行環境（Claude Code / subprocess / HTTP / Docker ...）
-```
+| 設計原則 | 説明 |
+|---------|------|
+| AP-1: コアはフロー制御のみ | DECOMPOSE→EXECUTE→AGGREGATE→EVOLVEのフロー制御に限定。実行方式・通信手段・ストレージ実装を一切知らない |
+| AP-2: 設定ファイルがアダプター | config.yamlの各Portに具体的なコマンドを記述。TANEBIコアはプレースホルダー置換してshell execするだけ。アダプター名・if分岐は一切存在しない |
+| AP-3: Portが契約、コマンドが実装 | TANEBIは「Portの入出力スキーマ」のみを定義。実現方法はconfig.yamlのコマンドに委ねる |
+| AP-4: Port単位でコマンドを混合可能 | Worker起動はDocker、State保存はS3、Event発火はRedis — Port単位で自由に構成できる |
+| AP-5: データ交換はYAML契約 | Port間のデータ交換は全てYAMLスキーマで定義。transport層はPortの外側 |
 
-| アダプター | 責務 | claude-native実装 |
-|-----------|------|------------------|
-| Communication | エージェント間メッセージング | Task tool |
-| Process | エージェント起動・監視・停止 | Task toolの並列呼び出し |
-| State Store | タスク・状態の永続化 | ファイルベース（`work/`） |
-| Knowledge Store | 人格・知識の永続化と検索 | ファイルベース（`personas/` + `knowledge/`） |
-| Security | 外部操作の検閲・承認 | Claude Code permissions |
+### 8.2 Outbound Port（config.yaml の tanebi.ports）
 
-### 8.2 IF-001: decompose(task_yaml) → subtasks[]
-
-タスクを受け取り、サブタスクリストに分解する。
-
-**入力**: `task_yaml`, `persona_list`, `plan_path`, `cmd_id`
-
-**出力**: `plan.md` — サブタスク定義（YAML構造）
+TANEBIコアが外部を呼び出す際に使うPort。
 
 ```yaml
-plan:
-  cmd: cmd_001
-  total_subtasks: 3
-  waves: 2
-  subtasks:
-    - id: subtask_001
-      description: "タスク内容"
-      persona: generalist_v1
-      output_path: "work/cmd_001/results/subtask_001.md"
-      depends_on: []
-      wave: 1
-```
-
-**claude-native実装**: `templates/decomposer.md` テンプレートでTask toolサブエージェントを起動。
-
-### 8.3 IF-002: execute(subtask_yaml, persona_yaml) → result_yaml
-
-サブタスクとPersonaを受け取り、タスクを実行して結果を返す。
-
-**入力**: `subtask_yaml`, `persona_yaml`, `few_shot_paths`, `output_path`
-
-**出力**: YAML frontmatter付きMarkdown
-
-```yaml
----
-subtask_id: subtask_001
-persona: generalist_v1
-status: success
-quality: GREEN
-domain: backend
-duration_estimate: short
----
-
-# 実行結果
-...
-```
-
-**claude-native実装**: `templates/worker_base.md` テンプレートで起動。同一wave内は同一メッセージで複数Task tool呼び出しにより並列実行。
-
-### 8.4 IF-003: aggregate(results[]) → final_report
-
-サブタスク結果を集約して最終報告書を生成する。
-
-**入力**: `results_dir`, `report_path`, `cmd_id`
-
-**出力**: 統合レポート（YAML frontmatter付きMarkdown）
-
-**パス受け渡し係原則**: オーケストレーターは`results/`の中身を読まず、ディレクトリパスのみをAggregatorに渡す。
-
-### 8.5 IF-004: evolve(cmd_dir) → evolution_result
-
-タスク完了後に進化エンジンを実行し、Personaを更新する。
-
-**入力**: `cmd_dir`（`work/cmd_NNN`）
-
-**実行内容**: Section 7.4 の6段階進化ステップ。
-
-**claude-native実装**: `bash scripts/evolve.sh work/cmd_NNN`
-
-### 8.6 IF-005: get_status() → adapter_info
-
-アダプターの状態・設定情報を返す。
-
-```yaml
-adapter_info:
-  name: "claude-native"
-  version: "1.0"
-  capabilities:
-    parallel_execution: true
-    max_parallel_workers: 5
-    supported_models: ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5-20251001"]
-    evolution_enabled: true
-    few_shot_enabled: true
-    trust_module_enabled: true
-  status: "ready"
-```
-
-### 8.7 アダプター構成
-
-```yaml
-# config.yaml
 tanebi:
-  version: "1.0"
-  adapter_set: "claude-native"
-
-  adapters:
-    communication:
-      type: "claude-native"
-    process:
-      type: "claude-native"
-    state_store:
-      type: "file"
-    knowledge_store:
-      type: "file"
-    security:
-      type: "claude-permissions"
-
-  adapter_config:
-    claude-native:
-      work_dir: "work"
-      persona_dir: "personas/active"
-      knowledge_dir: "knowledge"
-      few_shot_dir: "knowledge/few_shot_bank"
-      episode_dir: "knowledge/episodes"
-      max_parallel_workers: 5
-      worker_max_turns: 30
-      default_model: "sonnet"
+  ports:
+    worker_launch:
+      decompose:
+        command: "builtin:task_tool"  # claude-native
+        args: {role: decomposer, ...}
+      execute:
+        command: "builtin:task_tool"
+        args: {role: worker, ...}
+    event_emit:
+      command: "bash scripts/emit_event.sh {event_type} {payload}"
+      # 注記: event_emit Portの責務は「外部システムへの転送・永続化」に限定。
+      # プラグインへの内部配信は component_loader の責務（Port外の内部機構）。
+    state_read:
+      command: "cat {resource_path}"
+    state_write:
+      command: "tee {resource_path} > /dev/null"
+    knowledge_read:
+      command: "ls {knowledge_dir}/{domain}/"
+    security_check:
+      command: "bash modules/trust/trust_module.sh check {task_type}"
 ```
 
-### 8.8 エラーハンドリング
+プレースホルダー（`{persona_file}` 等）は command_executor.sh が実引数に置換して実行。
 
-| IF | 失敗時の挙動 | リカバリー |
-|----|------------|-----------|
-| IF-001 (decompose) | plan.md生成されない | ユーザーにエラー報告 |
-| IF-002 (execute) | result YAML `status: failure` | Aggregatorが集計。進化エンジンが失敗補正 |
-| IF-003 (aggregate) | report.md生成されない | ユーザーにエラー報告 |
-| IF-004 (evolve) | stderrにエラー | 進化のみスキップ（非致命的） |
-| IF-005 (get_status) | stderrにエラー | デフォルト値でフォールバック |
+### 8.3 builtin:task_tool（claude-native専用）
+
+Task toolはシェルコマンドではなくClaude Code内部のAPI。
+`builtin:task_tool` プレフィックスにより command_executor.sh が識別し、
+shell execの代わりにTask toolを直接呼ぶ（最小の内部分岐）。
+
+Shell builtinの類推: bashのcd/echoが外部コマンドと共存するように、
+builtin:task_toolは外部コマンドと共存する。
+Claude CodeがシェルからTask toolを呼べるAPIを提供した時点でbuiltinは消える。
+
+### 8.4 Inbound Callback（tanebi-callback.sh）
+
+Workerが結果をTANEBIに返す際に呼び出すCallback。
+TANEBIが提供する scripts/tanebi-callback.sh を Worker が実行するだけ（固定API仕様）。
+`tanebi.callbacks` はconfig.yamlの設定項目ではない。
+
+```bash
+# 使用例（全環境共通）
+bash scripts/tanebi-callback.sh worker_completed cmd_id=cmd_042 status=success
+```
+
+### 8.5 環境別のconfig.yaml例
+
+Docker, Lambda, subprocess 等の環境別プロファイルは docs/adapter-guide.md を参照。
+（adapter-guide.md は reports/adapter_policy.md §5 に相当する詳細ガイド。）
+
+### 8.6 エラーハンドリング
+
+| Port | 失敗時の挙動 | リカバリー |
+|------|------------|-----------|
+| worker_launch.decompose | plan.md生成されない | ユーザーにエラー報告 |
+| worker_launch.execute | result YAML `status: failure` | Aggregatorが集計。進化エンジンが失敗補正 |
+| event_emit | タイムアウト | 非致命的（ログ記録のみ） |
+| state_read / state_write | エラー終了 | ユーザーにエラー報告 |
+| security_check | タイムアウト | デフォルトdeny（安全側） |
 
 失敗は破棄されない。すべて記録され、進化エンジンのフィードバックループに組み込まれる。
 
@@ -1220,13 +1152,56 @@ tanebi:
 | evolution | 有効 | 詳細+fitness推移表示 |
 | history | 有効 | 自動インデックス+検索 |
 
-### 9.4 config.yaml 構造
+### 9.4 config.yaml 完全構造
 
 ```yaml
 tanebi:
   version: "1.0"
-  adapter_set: "claude-native"
 
+  # === Outbound Port（TANEBIコアが外部を呼ぶ） ===
+  ports:
+    worker_launch:
+      decompose:
+        command: "builtin:task_tool"
+        timeout: 120
+        args:
+          instructions: |
+            You are TANEBI Decomposer.
+            Read the request at {request_file}.
+            Available personas: {persona_list}.
+            Create a decomposition plan and write to {plan_output}.
+          max_turns: 10
+      execute:
+        command: "builtin:task_tool"
+        timeout: 600
+        args:
+          instructions: |
+            You are TANEBI Worker with persona {persona_file}.
+            Complete the subtask defined in {subtask_file}.
+            Reference few-shot examples: {few_shot_files}.
+            Write your result to {output_path}.
+          max_turns: 20
+      execute_wave:
+        timeout: 900
+    event_emit:
+      command: "bash scripts/emit_event.sh {work_dir}/{cmd_id} {event_type} {payload}"
+    state_read:
+      command: "cat {resource_path}"
+    state_write:
+      command: "tee {resource_path} > /dev/null"
+    knowledge_read:
+      command: "ls knowledge/few_shot_bank/{domain}/ | head -n {limit}"
+    security_check:
+      command: "bash modules/trust/trust_module.sh on_task_assign {persona_id} {risk_level}"
+    security_update:
+      command: "bash modules/trust/trust_module.sh on_task_complete {persona_id}"
+
+  # === Inbound Callback ===
+  # callbacksはconfig.yaml設定項目ではなく固定API仕様。
+  # Workerは bash scripts/tanebi-callback.sh <event_type> [key=value ...] を実行するだけ。
+  # 詳細は adapter-guide.md Section 6 を参照。
+
+  # === プラグイン設定 ===
   plugins:
     preset: "standard"         # minimal | standard | full | custom
 
@@ -1254,19 +1229,23 @@ tanebi:
       enabled: false
       auto_index: true
 
-  adapter_config:
-    claude-native:
-      work_dir: "work"
-      persona_dir: "personas/active"
-      library_dir: "personas/library"
-      history_dir: "personas/history"
-      knowledge_dir: "knowledge"
-      few_shot_dir: "knowledge/few_shot_bank"
-      episode_dir: "knowledge/episodes"
-      max_parallel_workers: 5
-      worker_max_turns: 30
-      default_model: "claude-sonnet-4-6"
+  # === パス設定 ===
+  paths:
+    work_dir: "work"
+    persona_dir: "personas/active"
+    library_dir: "personas/library"
+    history_dir: "personas/history"
+    knowledge_dir: "knowledge"
+    few_shot_dir: "knowledge/few_shot_bank"
+    episode_dir: "knowledge/episodes"
 
+  # === 実行設定 ===
+  execution:
+    max_parallel_workers: 5
+    worker_max_turns: 30
+    default_model: "claude-sonnet-4-6"
+
+  # === 進化エンジン設定 ===
   evolution:
     fitness_weights:
       quality_score: 0.35
@@ -1313,7 +1292,21 @@ tanebi:
 
 **前提条件**: Phase 1 完了
 
-### Phase 3: history + CLI整備
+### Phase 3.5: コマンド設定モデル基盤構築
+
+**目標**: コマンド設定モデルの基盤を実装し、config.yamlのPort定義でアダプター構成を決定できるようにする。
+
+**成果物**:
+- `scripts/command_executor.sh` — コマンド実行エンジン（プレースホルダー置換 + shell exec）
+- `scripts/tanebi-callback.sh` — Inbound Callbackスクリプト（Worker→TANEBIへの通知）
+- config.yaml への `tanebi.ports` セクション追加
+- `builtin:task_tool` メカニズム実装（claude-native用）
+- docs/ 再構成（adapter-guide.md昇格）
+- Python venv 基盤
+
+**前提条件**: Phase 2 完了
+
+### Phase 3 → Phase 4 に繰り上げ: history + CLI整備
 
 **目標**: historyプラグインと `tanebi` CLIの充実。
 
@@ -1328,7 +1321,7 @@ tanebi:
 
 **前提条件**: Phase 2 完了
 
-### Phase 4: エラーリカバリー + エコシステム
+### Phase 5: エラーリカバリー + エコシステム
 
 **目標**: Worker失敗時の自動リトライ、サードパーティプラグインサポート。
 
@@ -1341,7 +1334,7 @@ tanebi:
   - `tanebi plugin create <name>`
   - プラグインバリデーター
 
-**前提条件**: Phase 3 完了
+**前提条件**: Phase 4 完了
 
 ---
 
@@ -1409,6 +1402,8 @@ tanebi/
 │
 ├── scripts/
 │   ├── new_cmd.sh                  # タスク作業ディレクトリ作成
+│   ├── command_executor.sh         # コマンド実行エンジン（Port→shell exec）
+│   ├── tanebi-callback.sh          # Inbound Callbackスクリプト
 │   ├── evolve.sh                   # 進化エンジン実行
 │   ├── _evolve_helper.py           # 進化ヘルパー
 │   ├── _fitness.py                 # 適応度関数
@@ -1423,11 +1418,10 @@ tanebi/
 │   └── trust/
 │       └── trust_module.sh
 │
-├── adapters/                       # アダプター実装
-│   ├── claude-native/              # MVP
-│   └── subprocess/                 # 将来
+├── adapters/                       # 外部スクリプト置き場（任意）
 │
 └── docs/
     ├── design.md                   # 本文書
-    └── adapter-interface.md        # アダプターIF詳細仕様
+    ├── adapter-guide.md            # アダプター構成ガイド（環境別config.yaml例）
+    └── archive/                    # 旧設計文書アーカイブ
 ```
