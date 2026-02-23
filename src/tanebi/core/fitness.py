@@ -67,15 +67,21 @@ def load_fitness_config(tanebi_root=None) -> tuple[dict, int]:
         tuple[dict, int]: (weights dict, window size).
         Falls back to DEFAULT_WEIGHTS / DEFAULT_WINDOW on any error.
     """
-    root = Path(tanebi_root) if tanebi_root is not None else _default_tanebi_root()
-    config_path = root / "config.yaml"
-
     weights = dict(DEFAULT_WEIGHTS)
     window = DEFAULT_WINDOW
 
     try:
-        with config_path.open(encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
+        if tanebi_root is not None:
+            config_path = Path(tanebi_root) / "config.yaml"
+            if config_path.exists():
+                import yaml as _yaml
+                with open(config_path, encoding="utf-8") as f:
+                    cfg = _yaml.safe_load(f) or {}
+            else:
+                cfg = {}
+        else:
+            from tanebi.config import load_config
+            cfg = load_config()
         evo = cfg.get("tanebi", {}).get("evolution", {})
         fw = evo.get("fitness_weights", {})
         if fw:
@@ -108,7 +114,7 @@ def collect_task_history(
                     Ordered by cmd_dir name (oldest first).
     """
     if work_dir is None:
-        from tanebi.core.config import WORK_DIR
+        from tanebi.config import WORK_DIR
         work_dir = Path(WORK_DIR)
     else:
         work_dir = Path(work_dir)

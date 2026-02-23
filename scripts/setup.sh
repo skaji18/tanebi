@@ -49,7 +49,15 @@ echo "[setup] Installing tanebi[dev]..."
 "$PIP" install -e "$TANEBI_ROOT[dev]" -q
 echo "[setup] Package installed."
 
-# === 5. Seed Persona 初期化 ===
+# === 5. config.yaml 初期化 ===
+if [ ! -f "$TANEBI_ROOT/config.yaml" ]; then
+    cp "$TANEBI_ROOT/config.yaml.example" "$TANEBI_ROOT/config.yaml"
+    echo "[setup] Created config.yaml from example."
+else
+    echo "[setup] config.yaml already exists (skipped)."
+fi
+
+# === 6. Seed Persona 初期化 ===
 TEMPLATES_DIR="$TANEBI_ROOT/personas/library/templates"
 ACTIVE_DIR="$TANEBI_ROOT/personas/active"
 
@@ -69,7 +77,7 @@ for seed in "$TEMPLATES_DIR"/*_seed.yaml; do
     fi
 done
 
-# === 6. ランタイムディレクトリ確認・作成 ===
+# === 7. ランタイムディレクトリ確認・作成 ===
 echo "[setup] Ensuring runtime directories..."
 mkdir -p "$TANEBI_ROOT/work"
 mkdir -p "$TANEBI_ROOT/knowledge/episodes"
@@ -77,7 +85,7 @@ mkdir -p "$TANEBI_ROOT/knowledge/few_shot_bank"
 mkdir -p "$TANEBI_ROOT/personas/history"
 echo "[setup] Runtime directories OK."
 
-# === 7. 動作確認 ===
+# === 8. 動作確認 ===
 echo "[setup] Verifying tanebi installation..."
 "$TANEBI_BIN" --help
 echo "[setup] tanebi CLI OK."

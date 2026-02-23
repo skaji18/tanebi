@@ -1,6 +1,13 @@
-"""tanebi.core.config のユニットテスト"""
+"""tanebi.config のユニットテスト"""
 import pytest
-from tanebi.core.config import validate_config
+from tanebi.config import validate_config, _reset_cache
+
+
+@pytest.fixture(autouse=True)
+def reset_config_cache():
+    _reset_cache()
+    yield
+    _reset_cache()
 
 
 def test_validate_config_ok():

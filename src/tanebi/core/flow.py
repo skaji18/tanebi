@@ -38,15 +38,14 @@ def _read_plan(cmd_dir: Path, round: int) -> dict | None:
 def _load_config(cmd_dir: Path) -> dict:
     """TANEBI_ROOT の config.yaml を読んで tanebi セクション dict を返す。
 
-    cmd_dir が work/{task_id}/ の想定なので cmd_dir.parent.parent が TANEBI_ROOT。
     config.yaml が存在しない場合は空 dict を返す。
     """
-    config_path = cmd_dir.parent.parent / "config.yaml"
-    if not config_path.exists():
+    try:
+        from tanebi.config import load_config
+        cfg = load_config()
+        return cfg.get("tanebi", {}) if isinstance(cfg, dict) else {}
+    except Exception:
         return {}
-    with config_path.open(encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-    return cfg.get("tanebi", {}) if isinstance(cfg, dict) else {}
 
 
 def _get_checkpoint_subtasks(plan: dict | None) -> list[dict]:

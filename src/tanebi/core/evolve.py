@@ -34,10 +34,13 @@ def _default_tanebi_root() -> Path:
 
 def _load_few_shot_max(tanebi_root: Path) -> int:
     """Read tanebi.evolution.few_shot_max_per_domain from config.yaml (C-002)."""
-    config_path = tanebi_root / "config.yaml"
     try:
-        with config_path.open(encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
+        config_path = Path(tanebi_root) / "config.yaml"
+        if config_path.exists():
+            with open(config_path, encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+        else:
+            cfg = {}
         return int(
             cfg.get("tanebi", {}).get("evolution", {}).get("few_shot_max_per_domain", 100)
         )

@@ -58,7 +58,7 @@ def handle_callback(
         作成されたイベントファイルの Path
     """
     if work_dir is None:
-        from tanebi.core.config import WORK_DIR
+        from tanebi.config import WORK_DIR
         work_dir = Path(WORK_DIR)
 
     cmd_dir = resolve_cmd_dir(cmd_id, work_dir)

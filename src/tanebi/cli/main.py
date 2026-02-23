@@ -39,7 +39,7 @@ def main() -> None:
 def _status(args: argparse.Namespace) -> None:
     from pathlib import Path
     from tanebi.event_store import get_task_summary
-    from tanebi.core.config import WORK_DIR
+    from tanebi.config import WORK_DIR
 
     work_dir = Path(WORK_DIR)
 
@@ -68,7 +68,7 @@ def _status(args: argparse.Namespace) -> None:
 def _config(args: argparse.Namespace) -> None:
     import yaml
     from pathlib import Path
-    from tanebi.core.config import TANEBI_ROOT
+    from tanebi.config import TANEBI_ROOT
 
     config_path = Path(TANEBI_ROOT) / "config.yaml"
     if not config_path.exists():

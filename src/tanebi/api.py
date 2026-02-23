@@ -2,8 +2,6 @@
 from __future__ import annotations
 from pathlib import Path
 
-import yaml
-
 from tanebi.event_store import next_task_id, create_task, list_events, get_task_summary
 
 
@@ -31,14 +29,12 @@ def status(task_id: str, *, project_dir: Path | None = None) -> dict:
 
     # Load checkpoint config from project config.yaml
     checkpoint_config: dict = {}
-    config_path = project_dir / "config.yaml"
-    if config_path.exists():
-        try:
-            with config_path.open(encoding="utf-8") as f:
-                cfg = yaml.safe_load(f)
-            checkpoint_config = (cfg or {}).get("tanebi", {}).get("checkpoint", {})
-        except Exception:
-            pass
+    try:
+        from tanebi.config import load_config
+        cfg = load_config()
+        checkpoint_config = (cfg or {}).get("tanebi", {}).get("checkpoint", {})
+    except Exception:
+        pass
 
     return {
         **summary,

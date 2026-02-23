@@ -31,11 +31,9 @@ class ExecutorListener:
 
     def __init__(self, tanebi_root: Path, config: dict | None = None):
         self.tanebi_root = tanebi_root
-        # config は yaml.safe_load で直接読む（config.py の regex parser はネスト非対応）
         if config is None:
-            cfg_path = tanebi_root / "config.yaml"
-            with cfg_path.open() as f:
-                cfg = yaml.safe_load(f)
+            from tanebi.config import load_config
+            cfg = load_config()
             exec_cfg = cfg.get("tanebi", {}).get("execution", {})
         else:
             exec_cfg = config.get("execution", {})

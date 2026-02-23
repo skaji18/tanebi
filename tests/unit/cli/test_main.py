@@ -36,7 +36,7 @@ def test_tanebi_status_no_task_id(tmp_path):
     import argparse
     from tanebi.cli.main import _status
 
-    with patch("tanebi.core.config.WORK_DIR", str(tmp_path / "empty_work")):
+    with patch("tanebi.config.WORK_DIR", str(tmp_path / "empty_work")):
         args = argparse.Namespace(task_id=None)
         _status(args)  # should not raise; work_dir does not exist → "(no work directory)"
 

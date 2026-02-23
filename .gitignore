@@ -31,5 +31,5 @@ __pycache__/
 # Claude Code
 .claude/
 
-# Runtime config (template: config.yaml.template)
+# Runtime config (example: config.yaml.example)
 config.yaml

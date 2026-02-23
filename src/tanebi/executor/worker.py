@@ -5,8 +5,6 @@ import os
 import subprocess
 from pathlib import Path
 
-import yaml
-
 
 class WorkerError(Exception):
     """claude -p 実行失敗時の例外"""
@@ -39,10 +37,8 @@ def run_claude_p(
     - user_prompt は stdin (input=) で渡す
     - returncode != 0 のとき WorkerError を送出
     """
-    tanebi_root = Path(__file__).parent.parent.parent.parent
-    config_path = tanebi_root / "config.yaml"
-    with config_path.open(encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    from tanebi.config import load_config
+    cfg = load_config()
     exec_cfg = cfg.get("tanebi", {}).get("execution", {})
     model = model or exec_cfg.get("default_model", "claude-sonnet-4-6")
     timeout = timeout or exec_cfg.get("timeout", 300)

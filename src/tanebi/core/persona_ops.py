@@ -16,14 +16,14 @@ import yaml
 def _resolve_personas_dir(personas_dir: Optional[Path]) -> Path:
     if personas_dir is not None:
         return Path(personas_dir)
-    from tanebi.core.config import PERSONA_DIR
+    from tanebi.config import PERSONA_DIR
     return Path(PERSONA_DIR)
 
 
 def _resolve_snapshots_dir(snapshots_dir: Optional[Path]) -> Path:
     if snapshots_dir is not None:
         return Path(snapshots_dir)
-    from tanebi.core.config import HISTORY_DIR
+    from tanebi.config import HISTORY_DIR
     return Path(HISTORY_DIR)
 
 

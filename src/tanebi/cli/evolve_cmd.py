@@ -42,7 +42,7 @@ def _evolve_dispatch(args: argparse.Namespace) -> None:
 def _evolve_run(args: argparse.Namespace) -> None:
     """Run persona evolution for a task."""
     from tanebi.core.evolve import evolve_persona
-    from tanebi.core.config import TANEBI_ROOT, PERSONA_DIR
+    from tanebi.config import TANEBI_ROOT, PERSONA_DIR
 
     persona_dir = Path(PERSONA_DIR)
     persona_path = persona_dir / f"{args.persona_id}.yaml"
@@ -69,7 +69,7 @@ def _evolve_run(args: argparse.Namespace) -> None:
 def _evolve_show(args: argparse.Namespace) -> None:
     """Show evolution/performance section from persona YAML."""
     import yaml
-    from tanebi.core.config import PERSONA_DIR
+    from tanebi.config import PERSONA_DIR
     from tanebi.core.persona_ops import list_personas
 
     # args.persona_id holds the optional persona_id when dispatched via "show"
