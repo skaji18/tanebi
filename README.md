@@ -16,15 +16,24 @@
 
 In conventional multi-agent systems, agents are disposable: their memory resets every session, and the 100th task starts with the same capability as the first. **TANEBI** changes this by giving each agent a persistent **Persona** that evolves through task execution. Success patterns are reinforced, failure patterns are recorded, and the entire team becomes compoundingly smarter over time.
 
+## Prerequisites
+
+- **Python >= 3.10**
+- **Claude Code CLI** (`claude` command) — [Install](https://claude.ai/code)
+- **Anthropic API Key** — set as `ANTHROPIC_API_KEY` environment variable
+- **Git**
+- **macOS or Linux**
+
 ## Quick Start
 
 ```bash
 git clone https://github.com/skaji18/tanebi
 cd tanebi
+bash scripts/setup.sh
 claude
 ```
 
-That's it. `CLAUDE.md` auto-loads and TANEBI starts as your orchestrator. No tmux, no process managers, no extra infrastructure -- just Claude Code.
+`setup.sh` installs the Python package and initializes seed Personas. `CLAUDE.md` auto-loads and TANEBI starts as your orchestrator. No tmux, no process managers, no extra infrastructure -- just Claude Code.
 
 ## Architecture
 
@@ -34,9 +43,10 @@ TANEBI separates **Core** (Evolution Engine + Persona management + flow control)
 graph LR
     subgraph Core ["Core (CLAUDE.md orchestrator)"]
         O[Flow Control]
-        M[Modules / Plugins]
+        P[Persona Store]
+        E[Evolution Engine]
     end
-    subgraph ES ["Event Store (events/)"]
+    subgraph ES ["Event Store (work/{task_id}/events/)"]
         EL[(Immutable event log)]
     end
     subgraph EX ["Executor"]
@@ -48,7 +58,6 @@ graph LR
     CMD --> WRK
     WRK -- "*.completed" --> EL
     EL -- "*.completed" --> O
-    M -. subscribes .-> EL
 ```
 
 **4-phase loop per task (DECOMPOSE → EXECUTE → AGGREGATE → EVOLVE)**. Each cycle makes the team stronger.
@@ -59,57 +68,27 @@ graph LR
 tanebi/
   CLAUDE.md              # Orchestrator (auto-loaded by Claude Code)
   config.yaml            # Framework configuration
+  pyproject.toml         # Python package definition
+
+  src/
+    tanebi/              # Python package
+      cli/               # CLI entrypoint
+      core/              # Evolution engine, Persona Store, EventStore
+      executor/          # Executor reference implementation
 
   personas/
     active/              # Live Personas (YAML)
-    library/seeds/       # Starter templates
+    library/             # Starter templates (seeds/)
     history/             # Auto-snapshots every 5 tasks
 
   knowledge/
     few_shot_bank/       # Successful examples by domain
     episodes/            # Episode memory
 
-  plugins/               # Unified plugin system
-    trust/               # (type: core) Trust-based permission control
-    progress/            # (type: ui) Real-time worker status
-    approval/            # (type: ui) Plan review gate
-    cost/                # (type: ui) Token usage tracking
-    evolution/           # (type: ui) Persona growth visualization
-    history/             # (type: ui) Past task search
-    _template/           # Create your own plugin
-
   work/                  # Task workspaces (work/cmd_001/, ...)
   templates/             # Decomposer / Worker / Aggregator templates
   scripts/               # Evolution engine & utility scripts
   docs/                  # Design documents
-```
-
-## Plugin System
-
-TANEBI uses a **unified plugin system** with two types:
-
-| Type | Role | Capabilities |
-|------|------|-------------|
-| **core** | Intervene in task flow | Can allow/deny task assignments, hook into lifecycle events |
-| **ui** | Observe and display | Subscribe to events, send feedback to Core via Feedback Channel |
-
-Every plugin is a directory with `plugin.yaml` + `handler.sh`. Enable or disable them in `config.yaml`. Creating a custom plugin is as simple as copying `plugins/_template/`.
-
-## Preset Configurations
-
-Pick a preset in `config.yaml`, or customize individually:
-
-| Preset | Plugins Enabled | Best For |
-|--------|----------------|----------|
-| **minimal** | trust, approval (plan review only) | Getting started, simple tasks |
-| **standard** | trust, progress, approval, cost, evolution | Daily use |
-| **full** | All plugins including history + wave gates | Power users |
-
-```yaml
-# config.yaml
-tanebi:
-  plugins:
-    preset: "standard"   # minimal | standard | full | custom
 ```
 
 ## Persona Evolution
@@ -138,13 +117,14 @@ Agents that perform well get more tasks in their domain. Agents that struggle re
 
 ## Documentation
 
-- **[Design Document](docs/design.md)** -- Full architecture specification, Persona schema, Evolution Engine details, plugin system, and implementation roadmap
+- **[Design Document](docs/design.md)** -- Full architecture specification, Persona schema, Evolution Engine details, Store abstractions, and event-driven architecture
 - **[Executor Guide](docs/adapter-guide.md)** -- Executor environment implementation guide (Event Store schema compliant)
+- **[Implementation Roadmap](docs/roadmap.md)** -- Python migration roadmap with phased plan
 
 ### 読者別ガイド
-- **TANEBIを使う方**: このREADME → Quick Start → docs/design.md
+- **TANEBIを使う方**: このREADME → `bash scripts/setup.sh` → docs/design.md
 - **Executorを実装する方**: docs/adapter-guide.md
-- **TANEBIコアに貢献する方**: docs/design.md + docs/adapter-guide.md
+- **TANEBIコアに貢献する方**: docs/design.md + docs/roadmap.md
 
 ## License
 

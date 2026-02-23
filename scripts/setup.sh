@@ -79,7 +79,7 @@ echo "[setup] Runtime directories OK."
 
 # === 7. 動作確認 ===
 echo "[setup] Verifying tanebi installation..."
-"$TANEBI_BIN" --version
+"$TANEBI_BIN" --help
 echo "[setup] tanebi CLI OK."
 
 echo ""
