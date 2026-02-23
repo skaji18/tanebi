@@ -3,6 +3,7 @@ import argparse
 import sys
 from tanebi.cli.listener_cmd import add_listener_parser, add_new_parser
 from tanebi.cli.persona_cmd import add_persona_parser
+from tanebi.cli.evolve_cmd import add_evolve_parser
 
 
 def main() -> None:
@@ -15,6 +16,7 @@ def main() -> None:
     add_listener_parser(subparsers)
     add_new_parser(subparsers)
     add_persona_parser(subparsers)
+    add_evolve_parser(subparsers)
 
     # status [<task_id>]
     status_p = subparsers.add_parser("status", help="Show task status")

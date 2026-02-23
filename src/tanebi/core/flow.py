@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import yaml
@@ -26,7 +27,7 @@ def _all_workers_complete(events: list[dict], wave: int) -> bool:
     actual = sum(
         1
         for e in events
-        if e.get("event_type") == "worker.completed"
+        if e.get("event_type") in ("worker.completed", "error.worker_failed")
         and e.get("payload", {}).get("wave") == wave
     )
     return expected > 0 and actual >= expected
@@ -179,10 +180,32 @@ def _parse_wave_subtasks(cmd_dir: Path, payload: dict, wave: int) -> list[dict]:
 
 
 def on_wave_completed(cmd_dir: Path, payload: dict) -> None:
-    """wave.completed イベントに反応し、次waveのサブタスクがあれば execute.requested、なければ aggregate.requested を発火する。"""
+    """wave.completed イベントに反応し、Worker失敗チェック後、次waveのサブタスクがあれば execute.requested、なければ aggregate.requested を発火する。"""
     cmd_dir = Path(cmd_dir)
     current_wave = payload.get("wave", 1)
+    task_id = payload.get("task_id", cmd_dir.name)
     next_wave = current_wave + 1
+
+    events = list_events(cmd_dir)
+    success_count = sum(
+        1 for e in events
+        if e.get("event_type") == "worker.completed"
+        and e.get("payload", {}).get("wave") == current_wave
+    )
+    failed_count = sum(
+        1 for e in events
+        if e.get("event_type") == "error.worker_failed"
+        and e.get("payload", {}).get("wave") == current_wave
+    )
+
+    if success_count == 0 and failed_count > 0:
+        raise RuntimeError(f"All workers failed in wave {current_wave}. Task: {task_id}")
+
+    if failed_count > 0:
+        logging.warning(
+            "Partial failure in wave %d: %d failed, %d succeeded. Task: %s",
+            current_wave, failed_count, success_count, task_id,
+        )
 
     next_subtasks = _parse_wave_subtasks(cmd_dir, payload, next_wave)
 

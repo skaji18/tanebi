@@ -304,13 +304,7 @@ event_store.emit_event(task_id, "task.aggregated", {
 
 Aggregator完了後、進化エンジンを実行する。
 
-**現行実装**（Phase 5でPython化予定）:
-
-```bash
-bash scripts/evolve.sh work/{CMD_ID}
-```
-
-**Python化後の実装**（`tanebi.core.evolve`）:
+**実装**（`tanebi.core.evolve`）:
 
 ```python
 from tanebi.core.evolve import run_evolution
@@ -382,8 +376,8 @@ Python実装の対応表:
 | Worker→Core通知 | `tanebi.core.callback.handle_callback()` | |
 | Persona操作 | `tanebi.core.persona_ops` | copy/merge/snapshot/list/restore |
 | 設定読み込み | `tanebi.core.config` | |
-| 進化エンジン | `tanebi.core.evolve`（Phase 5） | `scripts/evolve.sh` は Phase 5 まで継続使用 |
-| 適応度計算 | `tanebi.core.fitness`（Phase 5） | `scripts/_fitness.py` は Phase 5 まで継続使用 |
+| 進化エンジン | `tanebi.core.evolve` | Phase 5 完了 |
+| 適応度計算 | `tanebi.core.fitness` | Phase 5 完了 |
 
 ## 将来の拡張
 

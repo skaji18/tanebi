@@ -108,3 +108,55 @@ def test_on_wave_completed_no_next_wave(tmp_tanebi_root):
     data = yaml.safe_load(all_files[0].read_text(encoding="utf-8"))
     assert data["event_type"] == "aggregate.requested"
     assert data["payload"]["task_id"] == "cmd_001"
+
+
+def test_on_wave_completed_all_failed_raises(tmp_tanebi_root):
+    """全Worker失敗時にRuntimeError"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+    plan = {
+        "subtasks": [
+            {"id": "s1", "description": "subtask 1", "wave": 1},
+            {"id": "s2", "description": "subtask 2", "wave": 1},
+        ]
+    }
+    (cmd_dir / "plan.md").write_text(yaml.dump(plan), encoding="utf-8")
+
+    emit_event(cmd_dir, "error.worker_failed", {"subtask_id": "s1", "wave": 1}, validate=False)
+    emit_event(cmd_dir, "error.worker_failed", {"subtask_id": "s2", "wave": 1}, validate=False)
+
+    with pytest.raises(RuntimeError, match="All workers failed in wave 1"):
+        on_wave_completed(cmd_dir, {"wave": 1, "task_id": "cmd_001"})
+
+
+def test_on_wave_completed_partial_failure_continues(tmp_tanebi_root):
+    """部分失敗は継続（例外なし）"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+    plan = {
+        "subtasks": [
+            {"id": "s1", "description": "subtask 1", "wave": 1},
+            {"id": "s2", "description": "subtask 2", "wave": 1},
+        ]
+    }
+    (cmd_dir / "plan.md").write_text(yaml.dump(plan), encoding="utf-8")
+
+    emit_event(cmd_dir, "worker.completed", {"subtask_id": "s1", "wave": 1}, validate=False)
+    emit_event(cmd_dir, "error.worker_failed", {"subtask_id": "s2", "wave": 1}, validate=False)
+
+    # 例外なしで継続
+    on_wave_completed(cmd_dir, {"wave": 1, "task_id": "cmd_001"})
+
+
+def test_on_wave_completed_all_success_continues(tmp_tanebi_root):
+    """全成功は継続（例外なし）"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+    plan = {
+        "subtasks": [
+            {"id": "s1", "description": "subtask 1", "wave": 1},
+        ]
+    }
+    (cmd_dir / "plan.md").write_text(yaml.dump(plan), encoding="utf-8")
+
+    emit_event(cmd_dir, "worker.completed", {"subtask_id": "s1", "wave": 1}, validate=False)
+
+    # 例外なしで継続
+    on_wave_completed(cmd_dir, {"wave": 1, "task_id": "cmd_001"})
