@@ -62,3 +62,19 @@ def test_result_with_report(tmp_tanebi_root):
     report_path.write_text(report_content, encoding="utf-8")
     r = result(task_id, project_dir=tmp_tanebi_root)
     assert r == report_content
+
+
+def test_status_includes_round_info(tmp_tanebi_root):
+    """status() に current_round / max_rounds / checkpoint_mode が含まれる。"""
+    task_id = submit("テストリクエスト", project_dir=tmp_tanebi_root)
+    s = status(task_id, project_dir=tmp_tanebi_root)
+
+    assert "current_round" in s
+    assert isinstance(s["current_round"], int)
+    assert s["current_round"] >= 1
+
+    assert "max_rounds" in s
+    assert isinstance(s["max_rounds"], int)
+
+    assert "checkpoint_mode" in s
+    assert isinstance(s["checkpoint_mode"], str)

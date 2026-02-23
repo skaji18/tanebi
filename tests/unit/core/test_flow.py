@@ -7,6 +7,7 @@ import yaml
 from tanebi.core.event_store import emit_event
 from tanebi.core.flow import (
     determine_state,
+    on_checkpoint_completed,
     on_task_created,
     on_task_decomposed,
     on_wave_completed,
@@ -160,3 +161,117 @@ def test_on_wave_completed_all_success_continues(tmp_tanebi_root):
 
     # 例外なしで継続
     on_wave_completed(cmd_dir, {"wave": 1, "task_id": "cmd_001"})
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint 関連テスト
+# ---------------------------------------------------------------------------
+
+def _write_checkpoint_config(tmp_tanebi_root: Path, max_rounds: int = 3) -> None:
+    """テスト用 config.yaml (checkpoint セクション付き) を作成する。"""
+    config = {
+        "tanebi": {
+            "checkpoint": {
+                "mode": "auto",
+                "max_rounds": max_rounds,
+                "verdict_policy": "any_fail",
+            }
+        }
+    }
+    (tmp_tanebi_root / "config.yaml").write_text(yaml.dump(config), encoding="utf-8")
+
+
+def test_on_checkpoint_completed_pass_emits_aggregate(tmp_tanebi_root):
+    """verdict=pass → aggregate.requested が発火される"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+    _write_checkpoint_config(tmp_tanebi_root)
+
+    on_checkpoint_completed(cmd_dir, {
+        "task_id": "cmd_001",
+        "round": 1,
+        "verdict": "pass",
+        "failed_subtasks": [],
+        "summary": "",
+    })
+
+    events_dir = cmd_dir / "events"
+    event_files = sorted(events_dir.glob("*.yaml"))
+    assert len(event_files) == 1
+    data = yaml.safe_load(event_files[0].read_text(encoding="utf-8"))
+    assert data["event_type"] == "aggregate.requested"
+    assert data["payload"]["task_id"] == "cmd_001"
+    assert data["payload"]["round"] == 1
+
+
+def test_on_checkpoint_completed_fail_emits_redecompose(tmp_tanebi_root):
+    """verdict=fail かつ round < max_rounds → decompose.requested(round=2) が発火される"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+    _write_checkpoint_config(tmp_tanebi_root, max_rounds=3)
+
+    on_checkpoint_completed(cmd_dir, {
+        "task_id": "cmd_001",
+        "round": 1,
+        "verdict": "fail",
+        "failed_subtasks": [{"subtask_id": "s1", "reason": "quality low"}],
+        "summary": "1/1 checkpoint worker(s) failed",
+    })
+
+    events_dir = cmd_dir / "events"
+    event_files = sorted(events_dir.glob("*.yaml"))
+    assert len(event_files) == 1
+    data = yaml.safe_load(event_files[0].read_text(encoding="utf-8"))
+    assert data["event_type"] == "decompose.requested"
+    assert data["payload"]["round"] == 2
+    assert "checkpoint_feedback" in data["payload"]
+    assert data["payload"]["checkpoint_feedback"]["previous_round"] == 1
+
+
+def test_on_checkpoint_completed_max_rounds_emits_aggregate(tmp_tanebi_root):
+    """round >= max_rounds → aggregate.requested が発火される（best effort）"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+    _write_checkpoint_config(tmp_tanebi_root, max_rounds=3)
+
+    on_checkpoint_completed(cmd_dir, {
+        "task_id": "cmd_001",
+        "round": 3,
+        "verdict": "fail",
+        "failed_subtasks": [],
+        "summary": "still failing",
+    })
+
+    events_dir = cmd_dir / "events"
+    event_files = sorted(events_dir.glob("*.yaml"))
+    assert len(event_files) == 1
+    data = yaml.safe_load(event_files[0].read_text(encoding="utf-8"))
+    assert data["event_type"] == "aggregate.requested"
+    assert data["payload"]["round"] == 3
+
+
+def test_all_workers_complete_filters_by_round(tmp_tanebi_root):
+    """異なる round のイベントが混在しても、指定 round のみ正しくカウントされる"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+
+    # round=1 の execute.requested と worker.completed（未完了: 2リクエスト1完了）
+    emit_event(cmd_dir, "execute.requested", {"subtask_id": "r1s1", "wave": 1, "round": 1}, validate=False)
+    emit_event(cmd_dir, "execute.requested", {"subtask_id": "r1s2", "wave": 1, "round": 1}, validate=False)
+    emit_event(cmd_dir, "worker.completed", {"subtask_id": "r1s1", "wave": 1, "round": 1}, validate=False)
+
+    # round=2 の execute.requested と worker.completed（完了: 1リクエスト1完了）
+    emit_event(cmd_dir, "execute.requested", {"subtask_id": "r2s1", "wave": 1, "round": 2}, validate=False)
+    emit_event(cmd_dir, "worker.completed", {"subtask_id": "r2s1", "wave": 1, "round": 2}, validate=False)
+
+    # round=2 の on_worker_completed → wave.completed が発火されるべき
+    on_worker_completed(cmd_dir, {"wave": 1, "round": 2})
+
+    events_dir = cmd_dir / "events"
+    all_files = sorted(events_dir.glob("*.yaml"))
+    # 最後のイベントが wave.completed であることを確認
+    last_data = yaml.safe_load(all_files[-1].read_text(encoding="utf-8"))
+    assert last_data["event_type"] == "wave.completed"
+    assert last_data["payload"]["round"] == 2
+
+    # round=1 の on_worker_completed → wave.completed は発火されないべき（r1s2 が未完了）
+    events_before = len(list(events_dir.glob("*.yaml")))
+    on_worker_completed(cmd_dir, {"wave": 1, "round": 1})
+    events_after = len(list(events_dir.glob("*.yaml")))
+    assert events_after == events_before  # 新しいイベントなし

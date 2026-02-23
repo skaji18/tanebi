@@ -215,3 +215,69 @@ class TestUpdatePersonaFitness:
 
         assert "evolution" in result["persona"]
         assert "fitness_score" in result["persona"]["evolution"]
+
+
+# ---------------------------------------------------------------------------
+# calculate_fitness — checkpoint_attributions (round/attribution 対応)
+# ---------------------------------------------------------------------------
+
+class TestCalculateFitnessAttribution:
+    """checkpoint_attributions パラメータによる重み付き計算のテスト。"""
+
+    def _make_round_history(self) -> list[dict]:
+        """2ラウンド構成: round=1 失敗 + round=2 成功"""
+        return [
+            {
+                "status": "failed",
+                "quality": "RED",
+                "domain": "python",
+                "duration_estimate": "",
+                "round": 1,
+                "subtask_id": "sub_001",
+            },
+            {
+                "status": "success",
+                "quality": "GREEN",
+                "domain": "python",
+                "duration_estimate": "",
+                "round": 2,
+                "subtask_id": "sub_001",
+            },
+        ]
+
+    def test_fitness_execution_attribution_reduces_score(self):
+        """execution attribution → 失敗が通常通り減点される（input より低スコア）。"""
+        history = self._make_round_history()
+        attrs_exec = {1: {"sub_001": "execution"}}
+        attrs_input = {1: {"sub_001": "input"}}
+
+        score_exec = calculate_fitness({}, history, checkpoint_attributions=attrs_exec)
+        score_input = calculate_fitness({}, history, checkpoint_attributions=attrs_input)
+
+        # execution は失敗が通常通りカウントされる → input より低いスコア
+        assert score_exec < score_input
+
+    def test_fitness_input_attribution_skips(self):
+        """input attribution → 失敗がスキップされ、スコアが attribution なしより高い。"""
+        history = self._make_round_history()
+        attrs_input = {1: {"sub_001": "input"}}
+
+        score_with_attr = calculate_fitness({}, history, checkpoint_attributions=attrs_input)
+        score_no_attr = calculate_fitness({}, history)
+
+        # input → 失敗をスキップ → 成功のみカウント → スコアが上がる
+        assert score_with_attr > score_no_attr
+
+    def test_fitness_partial_attribution_half_weight(self):
+        """partial attribution → execution と input の中間スコアになる。"""
+        history = self._make_round_history()
+        attrs_exec = {1: {"sub_001": "execution"}}
+        attrs_partial = {1: {"sub_001": "partial"}}
+        attrs_input = {1: {"sub_001": "input"}}
+
+        score_exec = calculate_fitness({}, history, checkpoint_attributions=attrs_exec)
+        score_partial = calculate_fitness({}, history, checkpoint_attributions=attrs_partial)
+        score_input = calculate_fitness({}, history, checkpoint_attributions=attrs_input)
+
+        # partial は execution と input の間（0.5重み）
+        assert score_exec <= score_partial <= score_input

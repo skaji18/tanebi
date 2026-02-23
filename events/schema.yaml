@@ -1,5 +1,5 @@
 # TANEBI Event Schema Definition
-# 全11種のイベントスキーマ定義
+# 全13種のイベントスキーマ定義
 # See: docs/design.md Section 4.2
 
 events:
@@ -96,6 +96,25 @@ events:
       cmd_id: string
       report_path: string
       quality_summary: string
+
+  # ===== Checkpoint =====
+
+  checkpoint.requested:
+    description: "Core → Executor: checkpoint wave の実行依頼"
+    direction: "Core → Event Store（Executor読取）"
+    payload:
+      task_id: string
+      round: integer
+      subtask_ids: array
+
+  checkpoint.completed:
+    description: "flow.py が checkpoint verdict 集約後に発火"
+    payload:
+      task_id: string
+      round: integer
+      verdict: "enum[pass, fail]"
+      failed_subtasks: array  # attribution 情報を含む
+      summary: string
 
   # ===== 例外 =====
 

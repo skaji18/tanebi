@@ -22,6 +22,7 @@ __all__ = [
     "DEFAULT_WINDOW",
     "load_fitness_config",
     "collect_task_history",
+    "collect_checkpoint_attributions",
     "calculate_fitness",
     "update_persona_fitness",
 ]
@@ -157,6 +158,8 @@ def collect_task_history(
                     "quality": p.get("quality", "RED"),
                     "domain": p.get("domain", ""),
                     "duration_estimate": "",
+                    "round": p.get("round", 1),
+                    "subtask_id": subtask_id,
                 })
             else:
                 # Started but never completed → treat as failed
@@ -165,6 +168,8 @@ def collect_task_history(
                     "quality": "RED",
                     "domain": "",
                     "duration_estimate": "",
+                    "round": started[subtask_id].get("round", 1),
+                    "subtask_id": subtask_id,
                 })
 
     return results
@@ -175,6 +180,8 @@ def calculate_fitness(
     task_history: list,
     weights: dict | None = None,
     window: int | None = None,
+    *,
+    checkpoint_attributions: dict | None = None,
 ) -> float:
     """Calculate fitness score from persona data and task history.
 
@@ -184,6 +191,12 @@ def calculate_fitness(
                       If empty, returns a base fitness derived from proficiency.
         weights: Fitness weight dict. Loaded from config if None.
         window: Sliding window size. Loaded from config if None.
+        checkpoint_attributions: {round: {subtask_id: attribution}} for round-aware
+            weighting. attribution in ("execution", "input", "partial").
+            - execution: weight 1.0 (normal deduction, persona responsibility)
+            - input: weight 0.0 (skipped, not persona's fault)
+            - partial: weight 0.5 (half deduction)
+            If None, all items use weight 1.0 (backward-compatible mode).
 
     Returns:
         float: Fitness score between 0.0 and 1.0.
@@ -205,25 +218,57 @@ def calculate_fitness(
     recent = task_history[-window:]
     total = len(recent)
 
-    # 1. quality_score
-    quality_values = [QUALITY_MAP.get(r.get("quality", ""), 0.5) for r in recent]
-    quality_score = sum(quality_values) / total
+    # Per-item attribution weights (1.0 = full, 0.5 = partial, 0.0 = skip)
+    item_weights = [1.0] * total
+    if checkpoint_attributions:
+        for i, r in enumerate(recent):
+            if r.get("status") != "success":
+                rnd = r.get("round")
+                sid = r.get("subtask_id", "")
+                if rnd is not None and rnd in checkpoint_attributions:
+                    attr = checkpoint_attributions[rnd].get(sid, "execution")
+                    if attr == "input":
+                        item_weights[i] = 0.0
+                    elif attr == "partial":
+                        item_weights[i] = 0.5
+                    # "execution" → keep 1.0
 
-    # 2. completion_rate
-    successes = sum(1 for r in recent if r.get("status") == "success")
-    completion_rate = successes / total
+    effective_total = sum(item_weights)
+    if effective_total == 0.0:
+        # All items skipped — fall back to base score
+        domains = (persona_data.get("knowledge") or {}).get("domains") or []
+        if domains:
+            avg_prof = sum(d.get("proficiency", 0.5) for d in domains) / len(domains)
+            return round(avg_prof * 0.5, 4)
+        return 0.25
 
-    # 3. efficiency (from duration_estimate)
-    eff_values = [DURATION_SCORE.get(r.get("duration_estimate", ""), 0.5) for r in recent]
-    efficiency = sum(eff_values) / total
+    # 1. quality_score (weighted)
+    quality_score = sum(
+        item_weights[i] * QUALITY_MAP.get(recent[i].get("quality", ""), 0.5)
+        for i in range(total)
+    ) / effective_total
 
-    # 4. growth_rate: first-half vs second-half quality
-    if total >= 4:
-        half = total // 2
-        first_q = sum(QUALITY_MAP.get(r.get("quality", ""), 0.5) for r in recent[:half]) / half
+    # 2. completion_rate (weighted)
+    completion_rate = sum(
+        item_weights[i] * (1.0 if recent[i].get("status") == "success" else 0.0)
+        for i in range(total)
+    ) / effective_total
+
+    # 3. efficiency (weighted)
+    efficiency = sum(
+        item_weights[i] * DURATION_SCORE.get(recent[i].get("duration_estimate", ""), 0.5)
+        for i in range(total)
+    ) / effective_total
+
+    # 4. growth_rate: compare first-half vs second-half of non-skipped items
+    active = [recent[i] for i in range(total) if item_weights[i] > 0]
+    n_active = len(active)
+    if n_active >= 4:
+        half = n_active // 2
+        first_q = sum(QUALITY_MAP.get(r.get("quality", ""), 0.5) for r in active[:half]) / half
         second_q = (
-            sum(QUALITY_MAP.get(r.get("quality", ""), 0.5) for r in recent[half:])
-            / (total - half)
+            sum(QUALITY_MAP.get(r.get("quality", ""), 0.5) for r in active[half:])
+            / (n_active - half)
         )
         growth_rate = min(max((second_q - first_q + 1.0) / 2.0, 0.0), 1.0)
     else:
@@ -239,9 +284,63 @@ def calculate_fitness(
     return round(min(max(fitness, 0.0), 1.0), 4)
 
 
+def collect_checkpoint_attributions(
+    cmd_dir: Path,
+) -> tuple[dict, int, bool]:
+    """Collect checkpoint attribution info from events in cmd_dir.
+
+    Reads checkpoint.completed events to build attribution mapping.
+    attribution values: "execution" (persona fault), "input" (not persona fault),
+    "partial" (partial fault).
+
+    Args:
+        cmd_dir: Path to the task directory (e.g. work/cmd_001/).
+
+    Returns:
+        tuple: (checkpoint_attributions, final_round, final_round_success)
+            - checkpoint_attributions: {round: {subtask_id: attribution}}
+            - final_round: highest round number seen in events
+            - final_round_success: True if last worker.completed status is success
+    """
+    events = list_events(Path(cmd_dir))
+
+    checkpoint_attributions: dict = {}
+    max_round = 1
+
+    for ev in events:
+        payload = ev.get("payload", {})
+        rnd = payload.get("round")
+        if rnd is not None:
+            max_round = max(max_round, rnd)
+
+        if ev.get("event_type") == "checkpoint.completed":
+            failed_subtasks = payload.get("failed_subtasks", [])
+            if failed_subtasks:
+                round_dict = checkpoint_attributions.setdefault(rnd or 1, {})
+                for item in failed_subtasks:
+                    if isinstance(item, dict):
+                        sid = item.get("subtask_id", "")
+                        attr = item.get("attribution", "execution")
+                        if sid:
+                            round_dict[sid] = attr
+
+    # Determine final_round_success from last worker.completed event
+    final_round_success = False
+    for ev in reversed(events):
+        if ev.get("event_type") == "worker.completed":
+            status = ev.get("payload", {}).get("status", "failed")
+            if status == "failure":
+                status = "failed"
+            final_round_success = (status == "success")
+            break
+
+    return checkpoint_attributions, max_round, final_round_success
+
+
 def update_persona_fitness(
     persona_path: Path,
     work_dir: Path | None = None,
+    checkpoint_attributions: dict | None = None,
 ) -> float:
     """Update evolution.fitness_score in a persona YAML and return the score.
 
@@ -250,6 +349,8 @@ def update_persona_fitness(
     Args:
         persona_path: Path to the persona YAML file.
         work_dir: Path to work/ directory. Auto-detected from config if None.
+        checkpoint_attributions: {round: {subtask_id: attribution}} for round-aware
+            weighting. Passed through to calculate_fitness(). None = legacy mode.
 
     Returns:
         float: The calculated fitness score.
@@ -271,7 +372,11 @@ def update_persona_fitness(
     persona_id = (persona or {}).get("id", "")
 
     task_history = collect_task_history(persona_id, work_dir)
-    fitness = calculate_fitness(persona or {}, task_history)
+    fitness = calculate_fitness(
+        persona or {},
+        task_history,
+        checkpoint_attributions=checkpoint_attributions,
+    )
 
     if not isinstance(persona, dict):
         persona = {}

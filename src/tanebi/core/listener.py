@@ -38,4 +38,6 @@ class CoreListener:
             flow.on_worker_completed(cmd_dir, payload)
         elif event_type == "wave.completed":
             flow.on_wave_completed(cmd_dir, payload)
+        elif event_type == "checkpoint.completed":
+            flow.on_checkpoint_completed(cmd_dir, payload)
         # その他のイベントは無視

@@ -48,6 +48,7 @@ def emit_event(
     cmd_dir: str | Path,
     event_type: str,
     payload: dict,
+    round: int = 1,
     validate: bool = True,
 ) -> Path:
     """
@@ -61,7 +62,7 @@ def emit_event(
     events_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    payload_with_ts = {**payload}
+    payload_with_ts = {"round": round, **payload}
     if "timestamp" not in payload_with_ts:
         payload_with_ts["timestamp"] = timestamp
 
@@ -224,15 +225,33 @@ def list_events(cmd_dir: Path) -> list[dict]:
 def get_task_summary(cmd_dir: Path) -> dict:
     """
     list_events を呼んでイベントログを取得し、タスクサマリーを返す。
+    current_round: イベントのペイロードから最大 round 番号を算出。
+    latest_checkpoint_verdict: checkpoint.completed が存在する場合に追加。
     """
     cmd_dir = Path(cmd_dir)
     events = list_events(cmd_dir)
     event_types = [e.get("event_type", "") for e in events]
     last_event = event_types[-1] if event_types else None
-    return {
+
+    # Compute current_round and latest checkpoint verdict from event payloads
+    current_round = 1
+    latest_checkpoint_verdict = None
+    for e in events:
+        payload = e.get("payload", {})
+        rnd = payload.get("round")
+        if rnd is not None:
+            current_round = max(current_round, rnd)
+        if e.get("event_type") == "checkpoint.completed":
+            latest_checkpoint_verdict = payload.get("verdict")
+
+    summary = {
         "task_id": cmd_dir.name,
         "state": last_event if last_event is not None else "unknown",
         "event_count": len(events),
         "last_event": last_event,
         "events": event_types,
+        "current_round": current_round,
     }
+    if latest_checkpoint_verdict is not None:
+        summary["latest_checkpoint_verdict"] = latest_checkpoint_verdict
+    return summary

@@ -18,7 +18,7 @@ from typing import Optional
 import yaml
 
 from tanebi.core.event_store import get_task_summary, list_events
-from tanebi.core.fitness import update_persona_fitness
+from tanebi.core.fitness import collect_checkpoint_attributions, update_persona_fitness
 from tanebi.core.persona_ops import snapshot_persona
 
 __all__ = ["evolve_persona"]
@@ -153,12 +153,17 @@ def evolve_persona(
     if cmd_dir.exists():
         _task_summary = get_task_summary(cmd_dir)
         task_result = _get_task_result(cmd_dir)
+        checkpoint_attributions, _final_round, final_round_success = (
+            collect_checkpoint_attributions(cmd_dir)
+        )
     else:
         _task_summary = {
             "task_id": task_id, "state": "unknown",
             "event_count": 0, "last_event": None, "events": [],
         }
         task_result = {"status": "failed", "quality": "RED", "domain": "general", "subtask_id": ""}
+        checkpoint_attributions = {}
+        final_round_success = False
 
     is_success = task_result["status"] == "success"
     is_green = task_result["quality"] == "GREEN"
@@ -168,6 +173,7 @@ def evolve_persona(
     fitness_score = update_persona_fitness(
         persona_path,
         work_dir=work_dir if work_dir.exists() else None,
+        checkpoint_attributions=checkpoint_attributions if checkpoint_attributions else None,
     )
 
     # ── 3. update (performance — cumulative average, M-011) ──────────────────
@@ -189,8 +195,9 @@ def evolve_persona(
     _save_persona(persona_path, data, persona, flat)
 
     # ── 4. few-shot (M-008: auto-update few_shot_refs) ───────────────────────
+    # Register only when the final round succeeded (not intermediate round results)
     few_shot_added = False
-    if is_green:
+    if is_green and is_success and final_round_success:
         few_shot_bank_dir = root / "knowledge" / "few_shot_bank"
         max_per_domain = _load_few_shot_max(root)
         domain = task_result.get("domain") or "general"

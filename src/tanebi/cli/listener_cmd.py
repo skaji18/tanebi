@@ -1,6 +1,8 @@
 """tanebi listener / tanebi new CLI サブコマンド"""
 from __future__ import annotations
 import argparse
+import signal
+import time
 from pathlib import Path
 import yaml
 from watchdog.observers import Observer
@@ -32,28 +34,28 @@ class EventRouter:
 
     def __init__(self, tanebi_root: Path):
         self.tanebi_root = tanebi_root
+        self.executor_listener = None
+        self._observer = None
 
     def start(self) -> None:
         from tanebi.core.listener import CoreListener
         from tanebi.executor.listener import ExecutorListener
 
         core = CoreListener(self.tanebi_root)
-        executor = ExecutorListener(self.tanebi_root)
+        self.executor_listener = ExecutorListener(self.tanebi_root)
 
-        handler = _EventHandler(core, executor)
-        observer = Observer()
+        handler = _EventHandler(core, self.executor_listener)
+        self._observer = Observer()
         work_dir = self.tanebi_root / "work"
         work_dir.mkdir(exist_ok=True)
-        observer.schedule(handler, str(work_dir), recursive=True)
-        observer.start()
+        self._observer.schedule(handler, str(work_dir), recursive=True)
+        self._observer.start()
         print(f"TANEBI Listener started. Watching: {work_dir}")
-        try:
-            import time
-            while observer.is_alive():
-                time.sleep(1)
-        except KeyboardInterrupt:
-            observer.stop()
-        observer.join()
+
+    def stop(self) -> None:
+        if self._observer is not None:
+            self._observer.stop()
+            self._observer.join()
 
 
 def add_listener_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -75,6 +77,18 @@ def _listener_start(args: argparse.Namespace) -> None:
     tanebi_root = Path.cwd()
     router = EventRouter(tanebi_root)
     router.start()
+
+    def _shutdown(signum=None, frame=None):
+        router.stop()
+        router.executor_listener.shutdown(wait=True)
+
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    try:
+        while True:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        _shutdown()
 
 
 def _new_task(args: argparse.Namespace) -> None:

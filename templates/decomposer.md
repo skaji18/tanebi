@@ -75,3 +75,23 @@ plan.md を書き出したら、以下を確認してください:
 - 全サブタスクにpersona が割り当てられているか
 - waveの順序が依存関係と矛盾していないか
 - output_pathが一意（重複なし）か
+
+## Checkpoint Subtask Rules
+
+When `checkpoint.mode` is `always` or when `auto` and task complexity is high
+(3+ subtasks or involves design/architecture), add a checkpoint subtask at the end:
+
+```
+## Subtask: checkpoint_001
+type: checkpoint
+wave: {final_wave + 1}
+persona: <Persona割り当て原則に従う（Step 3参照）>
+description: Review all subtask results and determine pass/fail verdict.
+```
+
+When `round >= 2` (re-decompose due to checkpoint fail):
+- Read `checkpoint_feedback` in the decompose.requested payload
+- For `attribution: execution` failures: assign the same subtask to a different persona
+  or add more specific acceptance criteria
+- For `attribution: input` failures: clarify the subtask specification
+- Include a note in each subtask describing what failed in the previous round

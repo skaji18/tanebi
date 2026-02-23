@@ -32,3 +32,9 @@ tanebi:
     fitness_window: 20           # 直近Nタスクのスライディングウィンドウ
     few_shot_max_per_domain: 100 # ドメイン毎の最大エントリ数
     snapshot_interval: 5         # N タスク毎に自動スナップショット
+
+  # === チェックポイント設定 ===
+  checkpoint:
+    mode: auto              # always / auto / never
+    max_rounds: 3           # 最大ループ回数（デフォルト3）
+    verdict_policy: any_fail  # any_fail / majority / all_fail
