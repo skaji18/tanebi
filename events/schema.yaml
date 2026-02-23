@@ -1,16 +1,51 @@
 # TANEBI Event Schema Definition
-# 全18種のイベントスキーマ定義
+# 全11種のイベントスキーマ定義
 # See: docs/design.md Section 4.2
 
 events:
-  # ===== タスク実行イベント =====
+  # ===== 記録系 =====
 
   task.created:
     description: "タスク作成時"
     payload:
-      cmd_id: string
-      request_summary: string
-      timestamp: string  # ISO8601
+      task_id:
+        type: string
+        required: true
+      request:
+        type: string
+        required: true
+      timestamp:
+        type: string  # ISO 8601
+        required: true
+
+  # ===== Core → Executor =====
+
+  decompose.requested:
+    description: "CoreがDecomposeを依頼するイベント"
+    direction: "Core → Event Store（Executor読取）"
+    payload:
+      cmd_dir: string  # 作業ディレクトリのパス
+      request_file: string  # リクエストファイルのパス
+      persona_file: string  # ペルソナファイルのパス
+
+  execute.requested:
+    description: "CoreがWorker実行を依頼するイベント"
+    direction: "Core → Event Store（Executor読取）"
+    payload:
+      cmd_dir: string
+      subtask_id: string  # サブタスクID
+      request_file: string
+      persona_file: string
+      wave: integer  # Waveナンバー
+
+  aggregate.requested:
+    description: "CoreがAggregateを依頼するイベント"
+    direction: "Core → Event Store（Executor読取）"
+    payload:
+      cmd_dir: string
+      persona_file: string
+
+  # ===== Executor → Core =====
 
   task.decomposed:
     description: "Decompose完了時"
@@ -46,6 +81,8 @@ events:
       quality: "enum[GREEN, YELLOW, RED]"
       domain: string
 
+  # ===== Core内部 =====
+
   wave.completed:
     description: "Wave内全Worker完了"
     payload:
@@ -60,90 +97,20 @@ events:
       report_path: string
       quality_summary: string
 
-  # ===== コア指示イベント（Core → Executor） =====
-
-  decompose.requested:
-    description: "CoreがDecomposeを依頼するイベント"
-    direction: "Core → Event Store（Executor読取）"
-    payload:
-      cmd_dir: string  # 作業ディレクトリのパス
-      request_file: string  # リクエストファイルのパス
-      persona_file: string  # ペルソナファイルのパス
-
-  execute.requested:
-    description: "CoreがWorker実行を依頼するイベント"
-    direction: "Core → Event Store（Executor読取）"
-    payload:
-      cmd_dir: string
-      subtask_id: string  # サブタスクID
-      request_file: string
-      persona_file: string
-      wave: integer  # Waveナンバー
-
-  aggregate.requested:
-    description: "CoreがAggregateを依頼するイベント"
-    direction: "Core → Event Store（Executor読取）"
-    payload:
-      cmd_dir: string
-      persona_file: string
-
-  # ===== 進化イベント =====
-
-  evolution.started:
-    description: "evolve.sh開始時"
-    payload:
-      cmd_id: string
-
-  evolution.persona_updated:
-    description: "Persona更新時"
-    payload:
-      persona_id: string
-      field: string
-      old_value: number
-      new_value: number
-      reason: string
-
-  evolution.few_shot_registered:
-    description: "Few-Shot登録時"
-    payload:
-      domain: string
-      subtask_id: string
-      quality: string
-
-  evolution.completed:
-    description: "evolve.sh完了時"
-    payload:
-      cmd_id: string
-      personas_updated: array
-      few_shots_added: integer
-
-  # ===== システムイベント =====
-
-  trust.check:
-    description: "Trust Module判定時"
-    payload:
-      persona_id: string
-      task_risk: string
-      decision: "enum[allow, deny]"
-
-  cost.token_used:
-    description: "トークン消費推定時"
-    payload:
-      cmd_id: string
-      subtask_id: "string?"  # optional
-      tokens_estimated: integer
+  # ===== 例外 =====
 
   error.worker_failed:
     description: "Worker失敗時"
     payload:
-      cmd_id: string
-      subtask_id: string
-      error_detail: string
-
-  approval.requested:
-    description: "承認待ち時"
-    payload:
-      cmd_id: string
-      approval_type: "enum[plan_review, wave_gate, danger_op, budget_exceeded]"
-      data: object
-      timeout_seconds: "number?"  # null = 無期限
+      task_id:
+        type: string
+        required: true
+      worker_id:
+        type: string
+        required: false  # optional
+      error:
+        type: string
+        required: true
+      timestamp:
+        type: string  # ISO 8601
+        required: true
