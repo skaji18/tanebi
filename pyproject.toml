@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tanebi"
+version = "0.1.0"
+description = "Task-Native Evolution Boost Infrastructure"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "filelock>=3.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+tanebi = "tanebi.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

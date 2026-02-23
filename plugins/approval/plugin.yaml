@@ -1,21 +1,40 @@
-name: approval
-version: "1.0"
-type: ui
-description: "計画承認ゲート — Decompose後の計画確認と実行中の介入"
-author: TANEBI
-subscribes_to:
-  - task.decomposed
-  - approval.requested
-lifecycle:
-  on_init: true
-  on_event: true
-  on_destroy: false
+plugin:
+  name: "approval"
+  version: "1.0.0"
+  type: ui
+  description: "計画承認ゲートと実行中介入ポイント"
+
+  subscribes_to:
+    - event_type: "task.decomposed"
+      handler: "present_plan_for_approval"
+    - event_type: "wave.completed"
+      handler: "wave_gate_check"
+    - event_type: "trust.check"
+      handler: "show_trust_decision"
+    - event_type: "approval.requested"
+      handler: "handle_approval_request"
+
+  feedback_commands:
+    - command: "approve_plan"
+      payload_schema: {approved: boolean, modifications: array}
+    - command: "reject_plan"
+      payload_schema: {reason: string, retry: boolean}
+    - command: "modify_plan"
+      payload_schema: {changes: array}
+    - command: "approve_wave"
+      payload_schema: {wave: number, approved: boolean}
+    - command: "abort_task"
+      payload_schema: {reason: string}
+
+  lifecycle:
+    on_init: "on_init"
+    on_event: "on_event"
+    on_destroy: "on_destroy"
+
+  display:
+    type: terminal
+    refresh_mode: event_driven
+
 config:
-  plan_review: true        # Decompose後に計画を表示して承認を求める
-  auto_approve_timeout: 0  # 0=無制限待機, N=N秒後に自動承認
-feedback_commands:
-  - approve_plan
-  - reject_plan
-  - modify_plan
-  - approve_wave
-  - abort_task
+  plan_review: true
+  auto_approve_timeout: 0

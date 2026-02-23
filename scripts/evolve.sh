@@ -59,7 +59,7 @@ while IFS= read -r line; do
     DELTA="${BASH_REMATCH[3]}"
     PERSONAS_UPDATED_LIST="${PERSONAS_UPDATED_LIST:+$PERSONAS_UPDATED_LIST,}\"$PERSONA_ID\""
     bash "$SCRIPT_DIR/emit_event.sh" "$CMD_DIR" evolution.persona_updated \
-      "{\"persona_id\": \"$PERSONA_ID\", \"field\": \"${DOMAIN}.proficiency\", \"old_value\": \"?\", \"new_value\": \"?\", \"reason\": \"failure_correction (${DELTA})\"}" || true
+      "{\"persona_id\": \"$PERSONA_ID\", \"field\": \"${DOMAIN}.proficiency\", \"old_value\": 0, \"new_value\": 0, \"reason\": \"failure_correction (${DELTA})\"}" || true
   fi
 
   # Few-shot registration: "  [evolve] Registered few-shot: {domain}/{filename}"

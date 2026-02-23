@@ -268,33 +268,114 @@ PYEOF
     ;;
 
   ""|--request|--*)
-    # オリジナルのランチャー動作
-    echo "[tanebi] Adapter: $TANEBI_ADAPTER_SET"
+    # [DEPRECATED] adapter_set は廃止予定。tanebi.ports で実行モードを自動検出。
+    if [ -n "${TANEBI_ADAPTER_SET:-}" ]; then
+      echo "[tanebi] WARNING: adapter_set は廃止予定です。config.yaml の tanebi.ports.worker_launch.execute.command で実行モードが自動決定されます。" >&2
+      echo "[tanebi] 詳細: docs/adapter-guide.md の Adapter Selection セクション参照" >&2
+    fi
+
+    # tanebi.ports.worker_launch.execute.command からモードを自動検出
+    EXECUTE_CMD=$(python3 - "$TANEBI_ROOT/config.yaml" <<'PYEOF'
+import yaml, sys
+try:
+    with open(sys.argv[1]) as f:
+        cfg = yaml.safe_load(f)
+    ports = cfg.get('tanebi', cfg).get('ports', {})
+    cmd = ports.get('worker_launch', {}).get('execute', {}).get('command', '')
+    print(cmd)
+except Exception:
+    print('')
+PYEOF
+    )
+
     echo "[tanebi] Root: $TANEBI_ROOT"
 
-    case "$TANEBI_ADAPTER_SET" in
-      claude-native)
-        echo "[tanebi] claude-native adapter selected."
-        echo "[tanebi] 以下のコマンドで起動してください:"
-        echo ""
-        echo "  cd \"$TANEBI_ROOT\" && claude"
-        echo ""
-        echo "[tanebi] CLAUDE.md が自動読み込みされ、TANEBI オーケストレーターが起動します。"
-        ;;
-      subprocess)
-        ORCHESTRATOR="$TANEBI_ROOT/adapters/subprocess/orchestrator.sh"
-        if [ ! -f "$ORCHESTRATOR" ]; then
-          echo "[tanebi] ERROR: orchestrator.sh not found: $ORCHESTRATOR" >&2
+    if [[ "${EXECUTE_CMD}" == builtin:* ]]; then
+      echo "[tanebi] Mode: claude-native (ports.worker_launch.execute.command=${EXECUTE_CMD})"
+      echo "[tanebi] 以下のコマンドで起動してください:"
+      echo ""
+      echo "  cd \"$TANEBI_ROOT\" && claude"
+      echo ""
+      echo "[tanebi] CLAUDE.md が自動読み込みされ、TANEBI オーケストレーターが起動します。"
+    else
+      # subprocess モード: claude -p でオーケストレーターを起動
+      echo "[tanebi] Mode: subprocess (ports.worker_launch.execute.command=${EXECUTE_CMD:-未設定})"
+
+      # --request フラグ or 位置引数からタスク内容を取得
+      REQUEST_FILE=""
+      DIRECT_TASK=""
+      ARGS=("$@")
+      i=0
+      while [[ $i -lt ${#ARGS[@]} ]]; do
+        if [[ "${ARGS[$i]}" == "--request" ]]; then
+          i=$(( i + 1 ))
+          REQUEST_FILE="${ARGS[$i]:-}"
+        elif [[ "${ARGS[$i]}" != --* ]] && [[ -z "$DIRECT_TASK" ]]; then
+          DIRECT_TASK="${ARGS[$i]}"
+        fi
+        i=$(( i + 1 ))
+      done
+
+      if [[ -n "$REQUEST_FILE" ]]; then
+        # 絶対パスまたは TANEBI_ROOT 相対パス
+        if [[ "$REQUEST_FILE" = /* ]]; then
+          ABS_REQUEST="$REQUEST_FILE"
+        else
+          ABS_REQUEST="$TANEBI_ROOT/$REQUEST_FILE"
+        fi
+        if [[ ! -f "$ABS_REQUEST" ]]; then
+          echo "[tanebi] Error: request file not found: $ABS_REQUEST" >&2
           exit 1
         fi
-        exec bash "$ORCHESTRATOR" "$@"
-        ;;
-      *)
-        echo "[tanebi] ERROR: Unknown adapter_set: '$TANEBI_ADAPTER_SET'" >&2
-        echo "[tanebi] config.yaml の adapter_set を 'claude-native' または 'subprocess' に設定してください" >&2
+        TASK_CONTENT=$(cat "$ABS_REQUEST")
+      elif [[ -n "$DIRECT_TASK" ]]; then
+        # 直接文字列指定の場合: new_cmd.sh で CMD_ID を取得して request.md を作成
+        echo "[tanebi] Creating new command directory..."
+        CMD_DIR=$(bash "$TANEBI_ROOT/scripts/new_cmd.sh")
+        CMD_ID=$(basename "$CMD_DIR")
+        echo "[tanebi] CMD_ID: $CMD_ID"
+        cat > "$CMD_DIR/request.md" <<REQEOF
+# Request: $CMD_ID
+
+## Task Description
+$DIRECT_TASK
+
+## Context
+作業ディレクトリ: $TANEBI_ROOT
+
+## Acceptance Criteria
+タスクを完了し、report.md に結果をまとめること。
+REQEOF
+        TASK_CONTENT="$DIRECT_TASK"
+        REQUEST_FILE="work/$CMD_ID/request.md"
+        ABS_REQUEST="$CMD_DIR/request.md"
+      else
+        echo "[tanebi] Error: No request specified." >&2
+        echo "[tanebi] Usage: tanebi --request work/cmd_NNN/request.md" >&2
+        echo "[tanebi] Usage: tanebi \"タスクの説明\"" >&2
         exit 1
-        ;;
-    esac
+      fi
+
+      echo "[tanebi] Launching subprocess orchestrator via claude -p..."
+      echo "[tanebi] Request: ${REQUEST_FILE:-direct}"
+
+      # claude -p でオーケストレーターを起動
+      # CLAUDE.md は TANEBI_ROOT のカレントディレクトリから自動読み込みされる
+      # プロンプトはstdinで渡す（--allowed-tools が variadic のため positional arg では誤解析される）
+      # Bash tool 経由で command_executor.sh が呼ばれ、unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT が適用される
+      cd "$TANEBI_ROOT"
+      unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT
+      {
+        printf 'リクエストファイル: %s\n\n' "$ABS_REQUEST"
+        cat "$ABS_REQUEST"
+      } | claude -p \
+        --model claude-sonnet-4-6 \
+        --output-format text \
+        --permission-mode acceptEdits \
+        --allowed-tools Read,Write,Glob,Grep,Bash
+
+      echo "[tanebi] Subprocess orchestrator completed."
+    fi
     ;;
 
   *)

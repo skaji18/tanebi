@@ -1,81 +1,24 @@
 # TANEBI設定ファイル
-# claude-native アダプター（MVP・ゼロインフラ）をデフォルト設定
+# design.md Section 9.4 準拠
 
 tanebi:
   version: "1.0"
-  # 新設計では tanebi.ports を使用（Outbound Port）。
-  # Inbound Callback は固定API仕様（scripts/tanebi-callback.sh）であり、config設定不要。
-  # このフィールドは互換性のために残存（Phase 4で削除予定）。
-  adapter_set: "claude-native"
 
-  # アダプター設定
-  adapters:
-    communication:
-      type: "claude-native"
-      description: "Task toolによるエージェント間通信"
-    process:
-      type: "claude-native"
-      description: "Task toolの並列呼び出しによるプロセス管理"
-    state_store:
-      type: "file"
-      description: "ファイルベース状態管理（work/ディレクトリ）"
-    knowledge_store:
-      type: "file"
-      description: "ファイルベース知識管理（personas/ + knowledge/）"
-    security:
-      type: "claude-permissions"
-      description: "Claude Codeのpermissions設定による制御"
-
-  # claude-nativeアダプター詳細設定
-  adapter_config:
-    claude-native:
-      work_dir: "work"
-      persona_dir: "personas/active"
-      library_dir: "personas/library"
-      history_dir: "personas/history"
-      knowledge_dir: "knowledge"
-      few_shot_dir: "knowledge/few_shot_bank"
-      episode_dir: "knowledge/episodes"
-      max_parallel_workers: 5
-      worker_max_turns: 30
-      default_model: "claude-sonnet-4-6"
-      decomposer_model: "claude-sonnet-4-6"
-      aggregator_model: "claude-sonnet-4-6"
-
-  # 進化エンジン設定
-  evolution:
-    enabled: true
-    auto_snapshot_interval: 5    # N タスク毎に自動スナップショット
-    fitness_weights:
-      quality_score: 0.35
-      completion_rate: 0.30
-      efficiency: 0.20
-      growth_rate: 0.15
-    fitness_window: 20           # 直近Nタスクのスライディングウィンドウ
-
-  # Few-Shot Bank設定
-  few_shot_bank:
-    max_entries_per_domain: 100  # ドメイン毎の最大エントリ数
-    min_quality_threshold: "GREEN"  # 登録する最低品質
-    auto_register: true          # タスク完了時に自動登録（Week 3で有効化）
-
-  # ログ設定
-  logging:
-    level: "INFO"                # DEBUG / INFO / WARN / ERROR
-    task_log_dir: "work"         # タスクログはwork/cmd_NNN/以下に保存
-
-  # Plugin configuration
+  # === モジュール・プラグイン設定 ===
   plugins:
+    preset: "standard"         # minimal | standard | full | custom
+
+    # custom時の個別設定
     trust:
       enabled: true
     progress:
       enabled: true
-      show_timestamps: true
-      show_wave_summary: true
     approval:
       enabled: true
       plan_review: true
-      auto_approve_timeout: 0
+      wave_gate: false
+      timeout_seconds: null
+      danger_op_confirm: true
     cost:
       enabled: true
       budget: null
@@ -85,53 +28,33 @@ tanebi:
       enabled: true
       show_on_complete: true
       verbose: false
-      show_fitness_trend: false
     history:
-      enabled: true
-      max_entries: 100
-      show_domains: true
-      show_personas: true
+      enabled: false
+      auto_index: true
 
-  # === コマンド設定モデル ===
-  # 各PortはTANEBIコアが外部に呼び出す際のコマンドを定義する。
-  # TANEBIコアは command_executor.sh を通じてこのコマンドを実行する。
-  # {placeholder} はcommand_executorが実引数に置換する。
-  ports:
-    worker_launch:
-      decompose:
-        command: "builtin:task_tool"
-        args:
-          role: "decomposer"
-          context_file: "{context_file}"
-          plan_file: "{plan_file}"
-      execute:
-        command: "builtin:task_tool"
-        args:
-          role: "worker"
-          task_file: "{task_file}"
-          persona_file: "{persona_file}"
-          result_file: "{result_file}"
-    event_emit:
-      command: "bash scripts/emit_event.sh {event_type} '{payload}'"
-    state_read:
-      command: "cat {resource_path}"
-    state_write:
-      command: "tee {resource_path} > /dev/null"
-    knowledge_read:
-      command: "ls knowledge/few_shot_bank/{domain}/"
-    security_check:
-      command: "bash modules/trust/trust_module.sh check {task_type}"
-    security_update:
-      command: "bash modules/trust/trust_module.sh update {agent_id} {result}"
+  # === パス設定 ===
+  paths:
+    work_dir: "work"
+    persona_dir: "personas/active"
+    library_dir: "personas/library"
+    history_dir: "personas/history"
+    knowledge_dir: "knowledge"
+    few_shot_dir: "knowledge/few_shot_bank"
+    episode_dir: "knowledge/episodes"
 
-  # Preset to use (minimal / standard / full)
-  preset: standard
+  # === 実行設定 ===
+  execution:
+    max_parallel_workers: 5
+    worker_max_turns: 30
+    default_model: "claude-sonnet-4-6"
 
-  # Week 1 スタブ設定（将来の機能）
-  modules:
-    trust:
-      enabled: false             # Week 3-4で有効化
-    cognitive_quality:
-      enabled: false             # 将来フェーズ
-    communication_optimization:
-      enabled: false             # 将来フェーズ
+  # === 進化エンジン設定 ===
+  evolution:
+    fitness_weights:
+      quality_score: 0.35
+      completion_rate: 0.30
+      efficiency: 0.20
+      growth_rate: 0.15
+    fitness_window: 20           # 直近Nタスクのスライディングウィンドウ
+    few_shot_max_per_domain: 100 # ドメイン毎の最大エントリ数
+    snapshot_interval: 5         # N タスク毎に自動スナップショット

@@ -16,8 +16,9 @@ claude-native アダプター（MVP）: `git clone → cd tanebi → claude` で
 ## セッション開始時の手順
 
 ```
-1. config.yaml を読み込む（tanebi.ports / max_parallel_workers / default_model を確認）
-   # DEPRECATED: adapter_set はコマンド設定モデルへ移行中。tanebi.ports参照。
+1. config.yaml を読み込む
+   - tanebi.execution を確認（max_parallel_workers / worker_max_turns / default_model）
+   - tanebi.plugins を確認（enabled な module/plugin のリスト）
 2. personas/active/ をカウント → 利用可能なPersona数を表示
 3. work/ をカウント → 前回のコマンド数を表示
 4. 「タスクを入力してください」と案内する
@@ -46,8 +47,8 @@ bash scripts/new_cmd.sh   # → work/cmd_NNN/ を作成
 **イベント発火**: REQUEST保存後にtask.createdイベントを発火する:
 
 ```bash
-bash scripts/emit_event.sh "work/cmd_NNN" task.created \
-  "{cmd_id: cmd_NNN, request_summary: '<依頼内容の1行要約>', timestamp: $(date -Iseconds)}"
+bash scripts/emit_event.sh work/cmd_NNN task.created \
+  '{cmd_id: cmd_NNN, request_summary: "<依頼内容の1行要約>", timestamp: "$(date -Iseconds)"}'
 ```
 
 ### Step 2: DECOMPOSE（Decomposerに委譲）
@@ -61,23 +62,42 @@ Task tool の prompt として使用する:
 - `{CMD_ID}` → cmd_NNN
 - `{TIMESTAMP}` → ISO8601形式の現在時刻
 
+**イベント発火**: Decomposer起動前にdecompose.requestedイベントを発火する:
+
+```bash
+bash scripts/emit_event.sh work/cmd_NNN decompose.requested \
+  '{cmd_id: cmd_NNN, request_path: work/cmd_NNN/request.md, persona_list: "<Persona ID一覧>", plan_output_path: work/cmd_NNN/plan.md}'
+```
+
 Task tool でDecomposerを起動し、出力 `work/cmd_NNN/plan.md` を待つ。
 
 **イベント発火**: Decomposer完了後にtask.decomposedイベントを発火する:
 
 ```bash
-bash scripts/emit_event.sh "work/cmd_NNN" task.decomposed \
-  "{cmd_id: cmd_NNN, plan_path: work/cmd_NNN/plan.md, subtask_count: N, timestamp: $(date -Iseconds)}"
-# 承認ゲート（approval plugin が処理）
+bash scripts/emit_event.sh work/cmd_NNN task.decomposed \
+  '{cmd_id: cmd_NNN, plan_path: work/cmd_NNN/plan.md, subtask_count: N, timestamp: "$(date -Iseconds)"}'
 ```
+
+**承認ゲート**: approval Module (type: ui) が task.decomposed イベントを受信して処理する:
+
+- approval Module (type: ui) が `task.decomposed` イベントを受信して `approval.requested` を発行
+- ユーザーが以下のコマンドでフィードバックを送る（`work/cmd_NNN/feedback/` に格納）:
+  - `approve_plan` → EXECUTE フェーズへ進む
+  - `reject_plan` → 修正指示付きで再DECOMPOSE（フィードバックを request.md に追記）
+  - `modify_plan` → サブタスクの追加/削除/変更後に EXECUTE へ
 
 ### Trust Module チェック
 
 各サブタスクのPersona割り当て前に信頼スコアを検証する:
 
 ```bash
-bash modules/trust/trust_module.sh on_task_assign {PERSONA_ID} {TASK_RISK_LEVEL}
-# 戻り値が1の場合は別のPersonaを選択すること
+# Trust チェック: command_executor.sh security_check ポート経由で
+# plugins/trust/handler.sh にイベント通知（trust.check イベント発火）
+bash scripts/command_executor.sh security_check \
+  work_dir=work cmd_id=${CMD_ID} \
+  persona_id=${PERSONA_ID} risk_level=${TASK_RISK_LEVEL}
+# trust.check イベントは非同期処理。trust スコアは次タスク時に反映。
+# （modules/trust/trust_module.sh は廃止済み → plugins/trust/handler.sh へ移行）
 ```
 
 - `{TASK_RISK_LEVEL}` は Decomposer が plan.md で指定（low / medium / high）
@@ -107,12 +127,19 @@ bash modules/trust/trust_module.sh on_task_assign {PERSONA_ID} {TASK_RISK_LEVEL}
 
 **Waveベースの並列実行:**
 
+**イベント発火**: Worker起動前にexecute.requestedイベントを発火する:
+
+```bash
+bash scripts/emit_event.sh work/cmd_NNN execute.requested \
+  '{cmd_id: cmd_NNN, subtask_id: SUBTASK_ID, persona_file: personas/active/PERSONA_ID.yaml, output_path: work/cmd_NNN/results/SUBTASK_ID.md, wave: WAVE_NUM}'
+```
+
 **イベント発火**: 各Worker実行前後にイベントを発火する:
 
 ```bash
 # Worker開始前
-bash scripts/emit_event.sh "work/cmd_NNN" worker.started \
-  "{subtask_id: SUBTASK_ID, persona_id: PERSONA_ID, wave: WAVE_NUM}"
+bash scripts/emit_event.sh work/cmd_NNN worker.started \
+  '{subtask_id: SUBTASK_ID, persona_id: PERSONA_ID, wave: WAVE_NUM}'
 ```
 
 - 同一wave内のサブタスク → **同一メッセージで複数 Task tool 呼び出し**（並列起動）
@@ -121,8 +148,8 @@ bash scripts/emit_event.sh "work/cmd_NNN" worker.started \
 
 ```bash
 # Worker完了後
-bash scripts/emit_event.sh "work/cmd_NNN" worker.completed \
-  "{subtask_id: SUBTASK_ID, persona_id: PERSONA_ID, quality: GREEN}"
+bash scripts/emit_event.sh work/cmd_NNN worker.completed \
+  '{subtask_id: SUBTASK_ID, persona_id: PERSONA_ID, quality: GREEN}'
 ```
 
 ### Step 4: AGGREGATE（Aggregatorに委譲）
@@ -138,11 +165,18 @@ Task tool の prompt として使用する:
 **パス受け渡し係原則（再確認）**: オーケストレーター自身は `results/` ファイルの内容を読まない。
 Aggregator にディレクトリパスを渡すだけ。Aggregator が内容を読んで統合レポートを生成する。
 
+**イベント発火**: Aggregator起動前にaggregate.requestedイベントを発火する:
+
+```bash
+bash scripts/emit_event.sh work/cmd_NNN aggregate.requested \
+  '{cmd_id: cmd_NNN, results_dir: work/cmd_NNN/results/, report_path: work/cmd_NNN/report.md}'
+```
+
 **イベント発火**: Aggregator完了後にtask.aggregatedイベントを発火する:
 
 ```bash
-bash scripts/emit_event.sh "work/cmd_NNN" task.aggregated \
-  "{cmd_id: cmd_NNN, report_path: work/cmd_NNN/report.md, timestamp: $(date -Iseconds)}"
+bash scripts/emit_event.sh work/cmd_NNN task.aggregated \
+  '{cmd_id: cmd_NNN, report_path: work/cmd_NNN/report.md, timestamp: "$(date -Iseconds)"}'
 ```
 
 ### Step 5: EVOLVE（進化ループ）
@@ -171,7 +205,7 @@ cat personas/active/{persona_id}.yaml
 3. **行動パラメータ調整**: GREEN/RED品質に基づき `risk_tolerance` を微調整
 4. **適応度スコア計算**: `scripts/_fitness.py` の `update_fitness_score()` を呼び出し、`evolution.fitness_score` を更新。適応度 = w1*品質 + w2*完了率 + w3*効率 + w4*成長率（直近20タスクのスライディングウィンドウ）
 5. **自動スナップショット**: `total_tasks` が5の倍数に達したら `personas/history/` にスナップショットを保存
-6. **Few-Shot自動登録**: GREEN+success の結果を `knowledge/few_shot_bank/{domain}/` に登録（ドメインあたり最大20件）
+6. **Few-Shot自動登録**: GREEN+success の結果を `knowledge/few_shot_bank/{domain}/` に登録（ドメインあたり最大100件（config.yaml の few_shot_bank.max_entries で設定））
 
 ## パス受け渡し係原則（CRITICAL）
 

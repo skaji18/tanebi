@@ -25,8 +25,31 @@ print('true' if plugin.get('enabled', True) else 'false')
 PYEOF
 }
 
-# subscribes_to に event_type が含まれるかチェック
-check_subscription() {
+# plugin.yaml の lifecycle から関数名を読む（plugin: ラッパーあり/なし両対応）
+# 戻り値: 関数名文字列（未定義時は hook 名をフォールバック）
+get_lifecycle_func() {
+  local plugin_yaml="$1"
+  local hook="$2"
+  python3 - "$plugin_yaml" "$hook" <<'PYEOF'
+import yaml, sys
+plugin_yaml = sys.argv[1]
+hook = sys.argv[2]
+with open(plugin_yaml) as f:
+    p = yaml.safe_load(f)
+plugin_node = p.get('plugin', p)  # plugin: ラッパーあり/なし両対応
+lifecycle = plugin_node.get('lifecycle', {})
+if isinstance(lifecycle, dict):
+    val = lifecycle.get(hook)
+    if val and isinstance(val, str):
+        print(val)
+        sys.exit()
+print(hook)  # フォールバック: hook 名をそのまま使用
+PYEOF
+}
+
+# plugin.yaml の subscribes_to から event_type に対応するハンドラー関数名を返す
+# 購読していない場合は空文字を返す（plugin: ラッパーあり/なし両対応）
+get_event_handler() {
   local plugin_yaml="$1"
   local event_type="$2"
   python3 - "$plugin_yaml" "$event_type" <<'PYEOF'
@@ -35,13 +58,14 @@ plugin_yaml = sys.argv[1]
 event_type = sys.argv[2]
 with open(plugin_yaml) as f:
     p = yaml.safe_load(f)
-subs = p.get('subscribes_to', [])
+plugin_node = p.get('plugin', p)  # plugin: ラッパーあり/なし両対応
+subs = plugin_node.get('subscribes_to', [])
 for s in subs:
     if isinstance(s, str) and s == event_type:
-        print('yes'); sys.exit()
+        print('on_event'); sys.exit()  # フラット文字列: フォールバックとして on_event を使用
     elif isinstance(s, dict) and s.get('event_type') == event_type:
-        print('yes'); sys.exit()
-print('no')
+        print(s.get('handler', 'on_event')); sys.exit()
+# 購読なし: 空文字出力
 PYEOF
 }
 
@@ -59,7 +83,8 @@ case "$cmd" in
       [ -f "$plugin_yaml" ] && [ -f "$handler" ] || continue
       enabled=$(is_plugin_enabled "$plugin_name" 2>/dev/null || echo "true")
       if [ "$enabled" = "true" ]; then
-        bash "$handler" on_init && echo "[component_loader] $plugin_name: initialized"
+        init_func=$(get_lifecycle_func "$plugin_yaml" "on_init" 2>/dev/null || echo "on_init")
+        bash "$handler" "$init_func" && echo "[component_loader] $plugin_name: initialized"
       else
         echo "[component_loader] $plugin_name: disabled, skip"
       fi
@@ -77,9 +102,9 @@ case "$cmd" in
       [ -f "$plugin_yaml" ] && [ -f "$handler" ] || continue
       enabled=$(is_plugin_enabled "$plugin_name" 2>/dev/null || echo "true")
       [ "$enabled" = "true" ] || continue
-      subscribes=$(check_subscription "$plugin_yaml" "$EVENT_TYPE" 2>/dev/null || echo "no")
-      if [ "$subscribes" = "yes" ]; then
-        bash "$handler" on_event "$EVENT_TYPE" "$EVENT_FILE"
+      handler_func=$(get_event_handler "$plugin_yaml" "$EVENT_TYPE" 2>/dev/null || echo "")
+      if [ -n "$handler_func" ]; then
+        bash "$handler" "$handler_func" "$EVENT_TYPE" "$EVENT_FILE"
       fi
     done
     ;;
@@ -88,8 +113,14 @@ case "$cmd" in
       [ -d "$plugin_dir" ] || continue
       plugin_name=$(basename "$plugin_dir")
       [[ "$plugin_name" == _* ]] && continue
+      plugin_yaml="$plugin_dir/plugin.yaml"
       handler="$plugin_dir/handler.sh"
-      [ -f "$handler" ] && bash "$handler" on_destroy 2>/dev/null || true
+      [ -f "$handler" ] || continue
+      destroy_func="on_destroy"
+      if [ -f "$plugin_yaml" ]; then
+        destroy_func=$(get_lifecycle_func "$plugin_yaml" "on_destroy" 2>/dev/null || echo "on_destroy")
+      fi
+      bash "$handler" "$destroy_func" 2>/dev/null || true
     done
     ;;
   *)

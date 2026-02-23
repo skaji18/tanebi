@@ -5,9 +5,9 @@
 
 # TANEBI_ROOT を解決（bash: BASH_SOURCE, zsh: $0）
 if [ -n "${BASH_VERSION:-}" ]; then
-  TANEBI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  TANEBI_ROOT="${TANEBI_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 else
-  TANEBI_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+  TANEBI_ROOT="${TANEBI_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 fi
 
 # config.yaml からキーを読むヘルパー（yaml/外部ツール不要）

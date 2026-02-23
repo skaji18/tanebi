@@ -13,10 +13,10 @@ PAYLOAD="${3:-$_default_payload}"
 EVENTS_DIR="$CMD_DIR/events"
 mkdir -p "$EVENTS_DIR"
 
-# 連番ファイル名
+# 連番ファイル名（3桁・1始まり・ドット保持）
 SEQ=$( (ls "$EVENTS_DIR"/*.yaml 2>/dev/null || true) | wc -l | tr -d ' ')
-SEQ=$(printf "%04d" "$SEQ")
-EVENT_FILE="$EVENTS_DIR/${SEQ}_${EVENT_TYPE//\./_}.yaml"
+SEQ=$(printf "%03d" $((SEQ + 1)))
+EVENT_FILE="$EVENTS_DIR/${SEQ}_${EVENT_TYPE}.yaml"
 
 # イベントYAML書き出し
 cat > "$EVENT_FILE" <<YAML

@@ -1,16 +1,22 @@
-name: trust
-version: "1.0"
-type: core
-description: "Trust Module — Personaの信頼スコアに基づきタスク割り当てを制御"
-author: TANEBI
-subscribes_to:
-  - trust.check
-  - worker.completed
-  - evolution.completed
-lifecycle:
-  on_init: true
-  on_event: true
-  on_destroy: false
+plugin:
+  name: "trust"
+  version: "1.0.0"
+  type: core
+  description: "信頼スコアに基づく段階的権限委譲"
+
+  subscribes_to:
+    - event_type: "trust.check"
+      handler: "log_trust_decision"
+
+  lifecycle:
+    on_init: "on_init"
+    on_event: "on_event"
+    on_destroy: "on_destroy"
+
+  hooks:
+    on_task_assign: "on_task_assign"
+    on_task_complete: "on_task_complete"
+
 config:
   min_score_for_high_risk: 30
   score_on_success_green: 5

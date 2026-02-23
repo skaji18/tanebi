@@ -1,5 +1,5 @@
 # TANEBI Event Schema Definition
-# 全15種のイベントスキーマ定義
+# 全18種のイベントスキーマ定義
 # See: docs/design.md Section 4.2
 
 events:
@@ -59,6 +59,33 @@ events:
       cmd_id: string
       report_path: string
       quality_summary: string
+
+  # ===== コア指示イベント（Core → Executor） =====
+
+  decompose.requested:
+    description: "CoreがDecomposeを依頼するイベント"
+    direction: "Core → Event Store（Executor読取）"
+    payload:
+      cmd_dir: string  # 作業ディレクトリのパス
+      request_file: string  # リクエストファイルのパス
+      persona_file: string  # ペルソナファイルのパス
+
+  execute.requested:
+    description: "CoreがWorker実行を依頼するイベント"
+    direction: "Core → Event Store（Executor読取）"
+    payload:
+      cmd_dir: string
+      subtask_id: string  # サブタスクID
+      request_file: string
+      persona_file: string
+      wave: integer  # Waveナンバー
+
+  aggregate.requested:
+    description: "CoreがAggregateを依頼するイベント"
+    direction: "Core → Event Store（Executor読取）"
+    payload:
+      cmd_dir: string
+      persona_file: string
 
   # ===== 進化イベント =====
 

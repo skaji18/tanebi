@@ -1,16 +1,25 @@
-name: history
-version: "1.0"
-type: ui
-description: "タスク完了履歴の自動インデックス化"
-author: TANEBI
-subscribes_to:
-  - task.aggregated
-lifecycle:
-  on_init: true
-  on_event: true
-  on_destroy: false
+plugin:
+  name: "history"
+  version: "1.0.0"
+  type: ui
+  description: "過去タスクの検索・閲覧"
+
+  subscribes_to:
+    - event_type: "task.aggregated"
+      handler: "index_completed_task"
+
+  feedback_commands: []
+
+  lifecycle:
+    on_init: "on_init"
+    on_event: "on_event"
+    on_destroy: "on_destroy"
+
+  display:
+    type: terminal
+    refresh_mode: manual
+
 config:
-  enabled: true
   max_entries: 100
   show_domains: true
   show_personas: true

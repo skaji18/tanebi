@@ -28,37 +28,30 @@ That's it. `CLAUDE.md` auto-loads and TANEBI starts as your orchestrator. No tmu
 
 ## Architecture
 
-TANEBI separates a stable **Core** (Evolution Engine + Persona management) from a swappable **Shell** (UI plugins + adapters). The core is environment-agnostic; the shell adapts to your runtime.
+TANEBI separates **Core** (Evolution Engine + Persona management + flow control) from **Executor** (task execution environment) via the **Event Store**. Core and Executor never interact directly -- all communication flows through the immutable event log.
 
 ```mermaid
-graph TD
-    subgraph Shell["Shell Layer"]
-        direction LR
-        subgraph UI["UI Plugins (type: ui)"]
-            PR["progress"]
-            AP["approval"]
-            CS["cost"]
-            EV["evolution"]
-        end
-        AD["Adapters<br/>claude-native / subprocess / ..."]
+graph LR
+    subgraph Core ["Core (CLAUDE.md orchestrator)"]
+        O[Flow Control]
+        M[Modules / Plugins]
     end
-
-    subgraph Core["Evolution Core"]
-        PLM["Persona Lifecycle Manager"]
-        IE["Individual Evolution<br/>Selection / Mutation / Crossover / Fitness"]
-        KE["Knowledge Evolution<br/>Few-Shot Bank / Episode Memory"]
+    subgraph ES ["Event Store (events/)"]
+        EL[(Immutable event log)]
     end
-
-    subgraph Foundation["Foundation Layer"]
-        PS["Persona Store"]
-        EB["Event Bus"]
-        AIL["Adapter Interfaces<br/>Command-based Config Model"]
+    subgraph EX ["Executor"]
+        CMD[command_executor.sh]
+        WRK[subprocess_worker.sh]
     end
-
-    Shell --> Core --> Foundation
+    O -- "*.requested" --> EL
+    EL -- "*.requested" --> CMD
+    CMD --> WRK
+    WRK -- "*.completed" --> EL
+    EL -- "*.completed" --> O
+    M -. subscribes .-> EL
 ```
 
-**Five-step loop per task**: Decompose --> Execute (parallel workers) --> Aggregate --> Evolve. Each cycle makes the team stronger.
+**4-phase loop per task (DECOMPOSE → EXECUTE → AGGREGATE → EVOLVE)**. Each cycle makes the team stronger.
 
 ## Directory Structure
 
@@ -145,12 +138,12 @@ Agents that perform well get more tasks in their domain. Agents that struggle re
 
 ## Documentation
 
-- **[Design Document](docs/design.md)** -- Full architecture specification, Persona schema, Evolution Engine details, plugin system, command-based config model, and implementation roadmap
-- **[Adapter Guide](docs/adapter-guide.md)** -- アダプター実装者向け詳細ガイド（コマンド設定モデル）
+- **[Design Document](docs/design.md)** -- Full architecture specification, Persona schema, Evolution Engine details, plugin system, and implementation roadmap
+- **[Executor Guide](docs/adapter-guide.md)** -- Executor environment implementation guide (Event Store schema compliant)
 
 ### 読者別ガイド
 - **TANEBIを使う方**: このREADME → Quick Start → docs/design.md
-- **アダプターを実装する方**: docs/adapter-guide.md
+- **Executorを実装する方**: docs/adapter-guide.md
 - **TANEBIコアに貢献する方**: docs/design.md + docs/adapter-guide.md
 
 ## License

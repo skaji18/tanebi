@@ -1,1311 +1,1321 @@
-# TANEBI アダプター抽象ポリシー v2 — コマンド設定モデル
+# TANEBI Executor 実装ガイド
 
-> 日付: 2026-02-20
+> Event Store スキーマ準拠 / 環境別実装リファレンス
+
+> 日付: 2026-02-22
 
 ---
 
-## 1. ポリシー概要（Executive Summary）
+## 1. 概要 — Executor とは
 
-### 設計原則（最高優先）
+### 1.1 TANEBI の三者分離アーキテクチャ
 
-> 「config.yamlに `worker.start: docker run ...` のように具体的な起動コマンドを書く。tanebiコアはそのコマンドをただ呼ぶだけ。if分岐もアダプター名も不要。**設定ファイル自体がアダプターである。**」
+TANEBI は **Core**・**Event Store**・**Executor** の三者に明確に分離されている。
 
-### 設計原則（5箇条）
+```
+ TANEBI Core                     Event Store                    Executor
+ ┌────────────────────┐     ┌─────────────────────┐     ┌────────────────────┐
+ │                    │     │  Immutable Event Log │     │                    │
+ │  Evolution Core    │     │                     │     │  *.requested を読み │
+ │  Persona Store     │     │  *.requested →→→→→→→│→→→→→│  処理して           │
+ │  component_loader  │     │                     │     │  *.completed を返す │
+ │  Module / Plugin   │     │  *.completed ←←←←←←←│←←←←←│                    │
+ │                    │     │                     │     │  実装技術は自由:    │
+ │  フロー決定ロジック │     │  events/            │     │  LLM / shell /     │
+ │  （次に何をするか  │     │    001_task.created  │     │  Docker / Lambda / │
+ │   を判断）         │     │    002_decompose     │     │  何でもよい        │
+ │                    │     │      .requested      │     │                    │
+ │  ※ Core は        │     │    003_task          │     │  ※ Executor は     │
+ │    Executor を     │     │      .decomposed     │     │    Core を知らない  │
+ │    知らない        │     │    ...               │     │                    │
+ └────────────────────┘     └─────────────────────┘     └────────────────────┘
+```
+
+- **Core** は何をするか（フロー決定）を知っている。どうやるかは知らない。
+- **Executor** は何をするかは知らない。`*.requested` イベントを処理して `*.completed` を返すだけ。
+- **Event Store** が両者をつなぐ唯一の接点。
+
+**コアが強いからこそ Executor を自由にできる。** Core の進化エンジン・Persona 管理・フロー決定は Executor の実装技術に依存しない。そのため Executor を Task tool / subprocess / Docker / Lambda 等に自由に差し替えられる。
+
+### 1.2 Executor の役割
+
+Executor は次の3種のイベントを処理する責務を持つ:
+
+| 入力イベント | 処理内容 | 出力イベント |
+|------------|---------|------------|
+| `decompose.requested` | ユーザー依頼をサブタスクに分解 | `task.decomposed` |
+| `execute.requested` | 1つのサブタスクを実行 | `worker.completed` |
+| `aggregate.requested` | 全サブタスク結果を集約 | `task.aggregated` |
+
+Executor は LLM で処理しても、シェルスクリプトで処理しても、コンテナで処理しても構わない。
+TANEBI はリファレンス実装として `scripts/command_executor.sh` + `scripts/subprocess_worker.sh` を同梱するが、これを使う義務はない。
+
+### 1.3 設計原則（AP-1〜AP-5）
+
+本ドキュメントは以下の設計原則に基づく。詳細は `docs/design.md` Section 8.1 を参照。
 
 | # | 原則 | 説明 |
 |---|------|------|
-| **AP-1** | **コアはフロー制御のみ** | TANEBIコアの責務はDECOMPOSE→EXECUTE→AGGREGATE→EVOLVEのフロー制御に限定する。実行方式・通信手段・ストレージ実装を一切知らない |
-| **AP-2** | **設定ファイルがアダプターである** | config.yamlの各Portに具体的なコマンドを記述する。TANEBIコアはそのコマンドをプレースホルダー置換してshell execするだけ。アダプター名・if分岐・ポート選択コードは**一切存在しない** |
-| **AP-3** | **Portが契約、コマンドが実装** | TANEBIは「Portの入出力スキーマ」のみを定義する。どう実現するか（シェル・Docker・Lambda・API等）はconfig.yamlのコマンドに委ねる |
-| **AP-4** | **Port単位でコマンドを混合可能** | Worker起動はDocker、State保存はS3、Event発火はRedis — 旧設計の「1 adapter = 全Port実装」と異なり、Port単位で自由に構成できる |
-| **AP-5** | **データ交換はYAML契約** | Port間のデータ交換は全てYAMLスキーマで定義される。transport層（ファイル/Redis/S3等）はPortの外側 |
+| **AP-1** | **Core はイベントだけを知る** | `*.requested` を発行し `*.completed` を待つ。実行方式を知らない |
+| **AP-2** | **Executor はイベントだけを知る** | `*.requested` を読み処理し `*.completed` を返す。Core の内部を知らない |
+| **AP-3** | **イベントスキーマが契約** | `events/schema.yaml` で定義されたスキーマが唯一の接点 |
+| **AP-4** | **Executor は自由に構成可能** | Task tool / subprocess / Docker / Lambda — 技術選択は Executor の裁量 |
+| **AP-5** | **データ交換は YAML 契約** | イベントペイロードは全て YAML スキーマで定義 |
 
-### 旧設計との根本的な違い
+### 1.4 本ドキュメントの対象読者
 
-| 観点 | 旧設計（名前選択式） | 新設計（コマンド設定モデル） |
-|------|---------------------|---------------------------|
-| **Adapter表現** | `adapter_set: docker` → case文分岐 | `ports.worker_launch.command: "docker run ..."` |
-| **TANEBIのAdapter知識** | 「docker」「lambda」「subprocess」を知っている | **何も知らない。** コマンド文字列を実行するだけ |
-| **構成単位** | adapter単位（1 adapter = 全Port） | **Port単位**（Port毎にコマンドを自由に混合） |
-| **新Adapter追加** | TANEBIコアにcase分岐追加 | config.yamlにコマンド記述のみ。**コア変更ゼロ** |
-| **コア内部のif文** | `case "$adapter_set" in docker) ... subprocess) ... esac` | **なし** |
-| **ディレクトリ構成** | `adapters/{adapter_name}/orchestrator.sh` + `port_mapping.yaml` | config.yamlのみ。adapter専用ディレクトリは任意（外部スクリプト置き場として） |
+- TANEBI の Executor を独自環境（Docker / Lambda / Cloud Run 等）で実装したい開発者
+- subprocess リファレンス実装（`command_executor.sh` + `subprocess_worker.sh`）を理解したい開発者
+- TANEBI のイベント駆動フローを理解したい開発者
 
-### 適用範囲
-
-本ポリシーは以下に適用される:
-
-- TANEBIコア（DECOMPOSE→EXECUTE→AGGREGATE→EVOLVEフロー制御）
-- config.yamlのPort command定義
-- 統一プラグインシステム（Plugin APIを介したPort利用に限定）
-- CLAUDE.md / オーケストレーター定義
-
-本ポリシーは以下には適用されない:
-
-- Persona YAMLスキーマ（環境非依存のデータ定義。変更不要）
-- 進化エンジン内部ロジック（evolve.shの進化ステップ。Portを通じてのみ外界と接触）
+**前提知識**: `docs/design.md` の Section 2・4・8 を先に読むことを推奨する。
 
 ---
 
-## 2. TANEBIコアの責務定義
+## 2. Executor 契約
 
-### 責務とする（Core Responsibilities）
+### 2.1 4 つの契約
 
-| 責務 | 説明 | 該当コンポーネント |
-|------|------|------------------|
-| フロー制御 | DECOMPOSE→EXECUTE→AGGREGATE→EVOLVEの順序制御 | オーケストレーター |
-| Wave管理 | 依存関係に基づくWave順序決定と同期ポイント | オーケストレーター |
-| Persona選択 | fitness_scoreに基づくPersona-サブタスク最適割当 | Decomposer（テンプレート） |
-| 進化制御 | タスク完了後の進化ステップ発動 | evolve.sh（コア呼び出し） |
-| **コマンド実行エンジン** | config.yamlからPortコマンドを読み取り、プレースホルダーを置換し、shell execする | **command_executor（新規）** |
-| イベントスキーマ定義 | イベント名・ペイロード構造の定義 | events/schema.yaml |
-| プラグインライフサイクル管理 | init/event/destroyの呼び出し順序 | component_loader.sh |
+Executor は以下の4つの契約を守らなければならない。それ以外は自由。
 
-### 責務としない（config.yamlに移動 = 利用者の責務）
+**1. `*.requested` イベントを処理する**
 
-| 責務 | 説明 | 判断根拠 |
-|------|------|---------|
-| Worker起動方式 | Task tool / bash / docker run / API call | **config.yamlのcommandで決定** |
-| 並列実行方式 | 複数Task tool / xargs -P / docker-compose / 並列invoke | **config.yamlのcommandで決定** |
-| 通信transport | ファイル書き出し / Redis PUBLISH / SQS / WebSocket | **config.yamlのcommandで決定** |
-| 状態永続化方式 | ローカルYAML / S3 / DynamoDB / PostgreSQL | **config.yamlのcommandで決定** |
-| 知識アクセス方式 | ローカルファイル / S3 pre-signed URL / Lambda Layer内蔵 | **config.yamlのcommandで決定** |
-| セキュリティ実装 | Claude Code permissions / IAM / カスタム認証 | **config.yamlのcommandで決定** |
+Event Store から `decompose.requested`・`execute.requested`・`aggregate.requested` を読み取り、対応する処理を実行する。
 
-### 境界判断基準
+**2. `*.completed` イベントを返す**
 
-```
-Q1: この機能は「フローのどのステップで何を呼ぶか」を決めるか、「そのステップの中身」を実装するか？
-    → 「どのステップで」 = コア、「中身」 = config.yamlのコマンド
+処理完了後、`task.decomposed`・`worker.completed`・`task.aggregated` 等を Event Store に書き込む。
 
-Q2: この機能を変更した時、config.yamlの書き換えだけで済むか？
-    → 済む = 正しい設計、コア変更が必要 = 設計違反
+**3. イベントスキーマに従う**
 
-Q3: 新しい実行環境（例: Kubernetes）を追加する時、TANEBIのコードに触れるか？
-    → 触れる = 設計違反。config.yamlにコマンドを書くだけで済むべき
-```
+`events/schema.yaml` で定義されたペイロード構造を守る（Section 6 参照）。
 
----
+**4. 成果物をファイルとして残す**
 
-## 3. コマンド設定モデル — 詳細設計
+`plan.md`・`results/*.md`・`report.md` 等をイベントで指定されたパスに書き出す。
 
-### 3.1 config.yaml Port構造
+これだけが契約。どんな技術で処理するか、何を内部で使うかは Executor の自由。
 
-```yaml
-tanebi:
-  ports:
-    # === Worker起動 ===
-    worker_launch:
-      decompose:
-        command: "<コマンド文字列>"     # プレースホルダー付き
-        timeout: 120                    # 秒（省略時デフォルト）
-      execute:
-        command: "<コマンド文字列>"
-        timeout: 600
-      execute_wave:
-        command: "<コマンド文字列>"     # 省略時: execute.commandをN回呼ぶ
-        timeout: 900
+### 2.2 Event Store の構造
 
-    # === イベント発火 ===
-    event_emit:
-      command: "<コマンド文字列>"
-
-    # === 状態読み書き ===
-    state_read:
-      command: "<コマンド文字列>"       # stdout に YAML/内容を出力
-    state_write:
-      command: "<コマンド文字列>"       # stdin から YAML/内容を受け取り
-
-    # === 知識アクセス ===
-    knowledge_read:
-      command: "<コマンド文字列>"       # stdout にパス一覧 or 内容
-
-    # === セキュリティ ===
-    security_check:
-      command: "<コマンド文字列>"       # exit 0 = allow, exit 1 = deny
-    security_update:
-      command: "<コマンド文字列>"
-```
-
-### 3.2 プレースホルダー規約
-
-TANEBIコアはコマンド文字列中のプレースホルダーを実引数で置換する。
-
-#### 共通プレースホルダー
-
-| プレースホルダー | 型 | 説明 |
-|----------------|-----|------|
-| `{cmd_id}` | string | コマンドID（例: cmd_001） |
-| `{work_dir}` | path | コマンド作業ディレクトリ |
-
-#### worker_launch.decompose
-
-| プレースホルダー | 型 | 説明 |
-|----------------|-----|------|
-| `{request_file}` | path | ユーザー依頼ファイルパス |
-| `{persona_list}` | string | カンマ区切りPersona ID一覧 |
-| `{plan_output}` | path | 分解計画の出力先パス |
-
-#### worker_launch.execute
-
-| プレースホルダー | 型 | 説明 |
-|----------------|-----|------|
-| `{subtask_id}` | string | サブタスクID |
-| `{subtask_file}` | path | サブタスク定義YAMLパス |
-| `{persona_file}` | path | Persona YAMLパス |
-| `{few_shot_files}` | string | カンマ区切りFew-Shotファイルパス |
-| `{output_path}` | path | 結果の出力先パス |
-
-#### event_emit
-
-| プレースホルダー | 型 | 説明 |
-|----------------|-----|------|
-| `{event_type}` | string | イベント種別（events/schema.yaml準拠） |
-| `{payload}` | json | イベントペイロード（JSONエスケープ済） |
-| `{idempotency_key}` | string | 冪等性キー |
-
-#### state_read / state_write
-
-| プレースホルダー | 型 | 説明 |
-|----------------|-----|------|
-| `{resource_type}` | string | `persona` / `result` / `plan` / `cost` / `history` / `event` |
-| `{resource_id}` | string | リソース識別子（persona_id, cmd_id, subtask_id等） |
-| `{resource_path}` | path | リソースのローカルパス（fileベース時） |
-
-#### knowledge_read
-
-| プレースホルダー | 型 | 説明 |
-|----------------|-----|------|
-| `{domain}` | string | ドメイン名 |
-| `{limit}` | integer | 取得上限数 |
-| `{query}` | string | 検索クエリ（search時） |
-
-#### security_check
-
-| プレースホルダー | 型 | 説明 |
-|----------------|-----|------|
-| `{persona_id}` | string | チェック対象Persona |
-| `{risk_level}` | string | `low` / `medium` / `high` |
-
-### 3.3 コマンド実行フロー
-
-TANEBIコアのコマンド実行エンジン（`command_executor`）の処理フロー:
+Event Store はファイルベースの不変イベントログ。各コマンドのイベントは独立したディレクトリに格納される。
 
 ```
-1. config.yaml から該当Port のコマンド文字列を読み取る
-2. プレースホルダーを実引数で置換
-   - 全プレースホルダーが解決されたことを検証（未解決 → エラー）
-   - シェルインジェクション対策: 引数値をシングルクォートでエスケープ
-3. コマンドを shell exec する
-   - timeout コマンドでラップ（config.yaml の timeout 値）
-   - exit code を確認（0 = 成功, 非0 = 失敗）
-4. stdout / stderr をキャプチャし、Port の出力スキーマに従いパース
+work/cmd_NNN/events/
+├── 001_task.created.yaml
+├── 002_decompose.requested.yaml      # Core → Executor
+├── 003_task.decomposed.yaml          # Executor → Core
+├── 004_execute.requested.yaml        # Core → Executor
+├── 005_worker.started.yaml
+├── 006_worker.completed.yaml         # Executor → Core
+├── 007_execute.requested.yaml        # Core → Executor（Wave 2）
+├── 008_worker.completed.yaml
+├── 009_wave.completed.yaml
+├── 010_aggregate.requested.yaml      # Core → Executor
+├── 011_task.aggregated.yaml          # Executor → Core
+├── 012_evolution.started.yaml
+└── 013_evolution.completed.yaml
 ```
 
-**疑似コード:**
+#### ファイル命名規則
+
+```
+NNN_event.type.yaml
+^^^  ^^^^^^^^^^
+ |   イベント名（ドット区切りをそのまま保持）
+ 3桁連番（001 始まり）
+```
+
+**重要な特性**:
+- イベントは追記のみ。書き換え・削除しない
+- 連番ファイル名（`001_`, `002_`, ...）が発行順序を保証する
+- 複数の消費者（Core / Module / Plugin / Executor）が同じイベントを読める
+
+### 2.3 イベント発火: emit_event.sh
+
+Executor がイベントを発行する際は `scripts/emit_event.sh` を使う:
 
 ```bash
-# scripts/command_executor.sh — TANEBIコアの心臓部
-execute_port() {
-  local port_name="$1"  # 例: "worker_launch.execute"
-  shift
-  # 残りの引数はkey=value形式のプレースホルダー
-
-  # 1. コマンド読み取り
-  local cmd_template
-  cmd_template=$(read_config "tanebi.ports.${port_name}.command")
-
-  if [ -z "$cmd_template" ]; then
-    echo "[TANEBI] ERROR: No command configured for port ${port_name}" >&2
-    return 1
-  fi
-
-  # 2. プレースホルダー置換
-  local cmd="$cmd_template"
-  for arg in "$@"; do
-    local key="${arg%%=*}"
-    local value="${arg#*=}"
-    local escaped_value
-    escaped_value=$(printf '%s' "$value" | sed "s/'/'\\\\''/g")
-    cmd="${cmd//\{${key}\}/'${escaped_value}'}"
-  done
-
-  # 未解決プレースホルダー検出
-  if echo "$cmd" | grep -qE '\{[a-z_]+\}'; then
-    echo "[TANEBI] ERROR: Unresolved placeholders in command: $cmd" >&2
-    return 1
-  fi
-
-  # 3. タイムアウト付きで実行
-  local timeout_sec
-  timeout_sec=$(read_config "tanebi.ports.${port_name}.timeout" "120")
-  timeout "$timeout_sec" bash -c "$cmd"
-}
+bash scripts/emit_event.sh <cmd_dir> <event_type> '<payload_yaml>'
 ```
 
-### 3.4 Port契約定義（入出力スキーマ）
+**例: worker.completed を発行**
 
-Port契約はYAMLスキーマベースの言語非依存形式で記述する。**コマンド文字列は契約に含まれない** — 契約は「何を入力し、何を出力するか」のみ。
-
-#### PORT: worker_launch.decompose
-
-```yaml
-contract:
-  input:
-    request: FilePath          # ユーザー依頼
-    personas: string[]         # 利用可能Persona ID一覧
-    plan_path: FilePath        # 分解計画の出力先
-    cmd_id: string             # コマンドID
-  output:
-    plan: PlanYAML             # 分解計画（plan_pathに書き出し）
-  precondition:
-    - request ファイルが存在し読み取り可能
-    - personas リストが1つ以上のIDを含む
-    - plan_path の親ディレクトリが書き込み可能
-  postcondition:
-    - plan_path にYAML構造の計画ファイルが生成される
+```bash
+bash scripts/emit_event.sh "work/cmd_001" "worker.completed" "
+cmd_id: cmd_001
+subtask_id: subtask_001
+status: success
+quality: GREEN
+domain: backend
+"
 ```
 
-#### PORT: worker_launch.execute
+**例: task.decomposed を発行**
 
-```yaml
-contract:
-  input:
-    subtask: SubtaskYAML       # サブタスク定義
-    persona: FilePath          # Persona YAMLパス
-    few_shots: FilePath[]      # Few-Shot事例パス一覧
-    output_path: FilePath      # 結果の出力先
-  output:
-    result: ResultYAML         # YAML frontmatter付きMarkdown
-  precondition:
-    - subtask がSubtaskスキーマに適合
-    - persona ファイルが存在
-  postcondition:
-    - output_path にYAML frontmatter付きMarkdownが生成
-    - frontmatter に status, quality, domain が含まれる
-```
-
-#### PORT: worker_launch.execute_wave
-
-```yaml
-contract:
-  input:
-    subtasks: SubtaskYAML[]
-    personas: FilePath[]
-    few_shots: FilePath[][]
-    output_paths: FilePath[]
-  output:
-    results: ResultYAML[]
-  postcondition:
-    - 全subtaskのoutput_pathにResultが生成
-  note: |
-    execute_wave.commandが設定されていない場合、
-    TANEBIコアはexecute.commandを並列呼び出し（xargs -P相当）で代替する。
-    execute_wave.commandが設定されている場合はそのコマンドに一括委任する。
-```
-
-#### PORT: event_emit
-
-```yaml
-contract:
-  input:
-    event_type: string         # events/schema.yaml準拠
-    payload: YAML              # イベントペイロード
-    idempotency_key: string    # 冪等性キー
-  output:
-    event_id: string           # 発行されたイベントID（stdout出力）
-  postcondition:
-    - イベントが永続化されること
-    - 同一idempotency_keyのイベントは重複処理されないこと
-```
-
-> **注記**: event_emit Portの責務は「イベントを外部システムへ転送・永続化すること」に限定される。
-> プラグインへの内部配信は component_loader の責務であり、Port外の内部機構である。
-> event_emit 完了後、component_loader が購読プラグインにイベントを dispatch する。
-
-#### PORT: state_read / state_write
-
-```yaml
-contract:
-  state_read:
-    input:
-      resource_type: enum[persona, result, plan, cost, history, event]
-      resource_id: string
-    output:
-      content: YAML | Markdown  # stdoutに出力
-    postcondition:
-      - 対象データが存在しない場合は空出力 + exit 0
-
-  state_write:
-    input:
-      resource_type: enum[persona, result, plan, cost, history, event]
-      resource_id: string
-      content: YAML | Markdown  # stdinから入力
-    postcondition:
-      - データが永続化されること
-```
-
-#### PORT: knowledge_read
-
-```yaml
-contract:
-  input:
-    domain: string
-    limit: integer?
-  output:
-    paths: string[]            # stdout に1行1パスで出力
-```
-
-#### PORT: security_check / security_update
-
-```yaml
-contract:
-  security_check:
-    input:
-      persona_id: string
-      risk_level: enum[low, medium, high]
-    output:
-      decision: exit_code      # 0 = allow, 1 = deny
-      detail: string           # stdoutにJSON（trust_score, reason等）
-  security_update:
-    input:
-      persona_id: string
-      task_result: ResultYAML  # stdinから入力
-    postcondition:
-      - trust_scoreが更新規則に従い更新
-```
-
-### 3.5 戻り値スキーマ
-
-```yaml
-# Plan（decompose戻り値）
+```bash
+bash scripts/emit_event.sh "work/cmd_001" "task.decomposed" "
+cmd_id: cmd_001
 plan:
-  cmd: string
-  total_subtasks: integer
-  waves: integer
   subtasks:
-    - id: string
-      description: string
-      persona: string
-      output_path: string
-      depends_on: string[]
-      wave: integer
-
-# Result（execute戻り値）— YAML frontmatter
-subtask_id: string
-persona: string
-status: enum[success, failure]
-quality: enum[GREEN, YELLOW, RED]
-domain: string
-duration_estimate: enum[short, medium, long]
+    - id: subtask_001
+      description: APIエンドポイント実装
+      persona: backend_specialist_v2
+      wave: 1
+    - id: subtask_002
+      description: ユニットテスト作成
+      persona: test_writer_v1
+      wave: 2
+  waves: 2
+  persona_assignments:
+    - subtask_id: subtask_001
+      persona_id: backend_specialist_v2
+    - subtask_id: subtask_002
+      persona_id: test_writer_v1
+"
 ```
 
-### 3.6 イベント冪等性・順序保証ポリシー
+`emit_event.sh` はイベントを Event Store に書き込んだ後、`component_loader.sh` の dispatch を呼んでプラグインにイベントを通知する。
 
-**方針: 冪等設計を基本とし、順序保証は利用者のコマンド選択に委ねる**
+### 2.4 イベントファイル形式
 
-1. **全イベントにidempotency_keyをプレースホルダーとして渡す**: `{cmd_id}_{subtask_id}_{event_type}_{timestamp}`
-2. **冪等性の実装責務はコマンド側にある**: TANEBIコアはidempotency_keyを渡すだけ
-3. **順序保証**: コマンド側の選択
-   - ファイルベース: ファイル名タイムスタンプ順（自然順序）
-   - SQS FIFO: MessageGroupId = `cmd_id`
-   - Redis: XADD で自然順序
+各イベントファイルの構造:
 
-### 3.7 全Port共通: タイムアウト仕様
+```yaml
+event_type: execute.requested
+timestamp: "2026-03-01T12:05:00"
+cmd_dir: work/cmd_001
+payload:
+  cmd_id: cmd_001
+  subtask_id: subtask_001
+  subtask_file: work/cmd_001/plan_subtasks/subtask_001.md
+  persona_file: personas/active/backend_specialist_v2.yaml
+  output_path: work/cmd_001/results/subtask_001.md
+  wave: 1
+```
 
-各Portに `timeout` フィールドを設定可能。
+Executor は `payload` セクションを読んで処理を行う。`cmd_dir` は Event Store のルートパス。
 
-| Port | デフォルト | 超過時の挙動 |
-|------|----------|------------|
-| worker_launch.decompose | 120秒 | プロセス強制終了。エラー報告 |
-| worker_launch.execute | 600秒 | プロセス強制終了。`status: failure` |
-| worker_launch.execute_wave | 900秒 | 全プロセス強制終了 |
-| event_emit | 30秒 | タイムアウト。非致命的（ログ記録） |
-| state_read / state_write | 60秒 | エラー終了 |
-| security_check | 30秒 | デフォルトdeny（安全側） |
+### 2.5 フロー全体像
+
+```
+Core                     Event Store              Executor
+  │                           │                      │
+  │── decompose.requested ───▶│                      │
+  │                           │◀─── (読み取り) ──────│
+  │                           │                      │  Decomposer実行
+  │                           │                      │  plan.md 生成
+  │                           │◀── task.decomposed ──│
+  │◀─── (読み取り) ───────────│                      │
+  │                           │                      │
+  │── execute.requested ─────▶│  (Wave 1, 複数並列)  │
+  │                           │◀─── (読み取り) ──────│
+  │                           │                      │  Worker 実行
+  │                           │                      │  results/*.md 生成
+  │                           │◀── worker.completed ─│
+  │◀─── (読み取り) ───────────│                      │
+  │                           │                      │
+  │── aggregate.requested ───▶│                      │
+  │                           │◀─── (読み取り) ──────│
+  │                           │                      │  Aggregator 実行
+  │                           │                      │  report.md 生成
+  │                           │◀── task.aggregated ──│
+  │◀─── (読み取り) ───────────│                      │
+```
 
 ---
 
-## 4. claude-nativeの扱い — The Builtin Exception
+## 3. config.yaml 設定
 
-### 4.1 問題の本質
+### 3.1 Executor に関連する設定セクション
 
-Task toolはClaude Codeセッション内部のプログラマティックAPI。外部シェルコマンドではない。
-
-```
-subprocess:   command: "bash run_worker.sh {subtask_file}"     ← shell execできる
-Docker:       command: "docker run --rm tanebi-worker ..."      ← shell execできる
-Lambda:       command: "aws lambda invoke --payload '...' ..."  ← shell execできる
-claude-native: ???  Task tool呼び出し                            ← shell execできない
-```
-
-claude-nativeはTANEBIの**現在のデフォルト動作環境**であり、最も使われる構成である。これを「特殊ケース」として扱うのか、コマンドモデルに統合するのかが設計上の最大の難題。
-
-### 4.2 4案の比較分析
-
-#### 案1: ブリッジスクリプト方式
-
-```yaml
-worker_launch:
-  execute:
-    command: "bash tanebi-claude-bridge.sh {subtask_file} {persona_file}"
-```
-
-- ブリッジスクリプトがCLAUDE.md内で動作し、Task tool呼び出しロジックを含む
-- TANEBIコアからは通常のコマンド実行に見える
-
-**利点**: コマンドモデルに完全統合。TANEBIコアに特殊コードなし。
-**欠点**: ブリッジスクリプトは実際にはシェルから実行できない（Task toolはClaude Code内部API）。「コマンドとして書かれているが、実際にはshell execされない」という欺瞞が生まれる。コマンドモデルの「コマンドをshell execする」という前提を破壊する。
-**判定**: **却下** — 形式的にはコマンドだが実質は嘘。設計の誠実さを損なう。
-
-#### 案2: レガシーfallback方式
-
-```yaml
-# config.yaml にworker_launch.execute.commandが未設定
-# → TANEBIコアがTask tool（claude-native）にfallback
-```
-
-- コマンドが設定されていないPortはclaude-native動作
-- TANEBIコア内に「commandが空ならTask toolを使う」ロジック
-
-**利点**: 既存動作を維持。新規アダプターはコマンドモデルの恩恵を受ける。
-**欠点**: TANEBIコアにclaude-native固有の知識（「Task toolを使う」）が残る。AP-2違反。「設定がない = デフォルト動作」は暗黙知であり、config.yamlを読んだだけでは何が起きるかわからない。
-**判定**: **却下** — 暗黙のfallbackは設計原則「設定ファイルで全て決まる」に反する。
-
-#### 案3: Builtin Command方式（推奨）
-
-```yaml
-worker_launch:
-  execute:
-    command: "builtin:task_tool"
-    args:
-      instructions: |
-        Read {persona_file}. Complete the subtask defined in {subtask_file}.
-        Write result to {output_path}.
-```
-
-- `builtin:` プレフィックス付きコマンドは、shell execではなくTANEBI内蔵の呼び出しメカニズムを使う
-- 現在の唯一のbuiltin: `task_tool`（Claude Code内部API呼び出し）
-- TANEBIコアの分岐は**1つだけ**: `builtin:` で始まるか否か
-
-**利点**:
-1. **config.yamlに明示的に記述される** — 何が起きるか一目瞭然
-2. **TANEBIコアの分岐は最小限** — `builtin:` プレフィックス検出の1行のみ
-3. **アダプター名が存在しない** — `builtin:task_tool` はアダプター名ではなく「呼び出し方式」の指定
-4. **Shell builtinの類推**: bashにも `cd`, `echo` 等のbuiltinがある。外部コマンドとbuiltinの共存はUNIXの伝統
-5. **将来消滅可能** — Claude Code CLIが`claude --invoke-task`等のシェル呼び出し可能なAPIを提供した時点で、`builtin:task_tool` → `claude --invoke-task '...'` に書き換えるだけでbuiltinが消える
-
-**欠点**:
-1. `builtin:` プレフィックスの特殊処理がTANEBIコアに存在する（AP-2の微小な違反）
-2. 現時点で `builtin:task_tool` が唯一のbuiltinであり、「将来追加されるかもしれない」builtinのために抽象化している感がある
-
-**判定**: **推奨** — 設計原則の精神（設定ファイルで全て決まる・TANEBIコアに環境固有知識を入れない）を最大限尊重しつつ、Task toolの技術的制約に対する誠実な解決策。
-
-#### 案4: ネイティブモード/コマンドモード二重構造
+Executor の環境を問わず、TANEBI の動作は `config.yaml` の次のセクションで制御する。
 
 ```yaml
 tanebi:
-  mode: native    # or "command"
+  version: "1.0"
+
+  # === モジュール・プラグイン設定 ===
+  plugins:
+    preset: "standard"         # minimal | standard | full | custom
+
+    # custom 時の個別設定
+    trust:
+      enabled: true
+    progress:
+      enabled: true
+    approval:
+      enabled: true
+      plan_review: true
+      wave_gate: false
+      timeout_seconds: null
+      danger_op_confirm: true
+    cost:
+      enabled: true
+      budget: null
+      show_per_subtask: true
+      show_cumulative: true
+    evolution:
+      enabled: true
+      show_on_complete: true
+      verbose: false
+    history:
+      enabled: false
+      auto_index: true
+
+  # === パス設定 ===
+  paths:
+    work_dir: "work"
+    persona_dir: "personas/active"
+    library_dir: "personas/library"
+    history_dir: "personas/history"
+    knowledge_dir: "knowledge"
+    few_shot_dir: "knowledge/few_shot_bank"
+    episode_dir: "knowledge/episodes"
+
+  # === 実行設定 ===
+  execution:
+    max_parallel_workers: 5
+    worker_max_turns: 30
+    default_model: "claude-sonnet-4-6"
+
+  # === 進化エンジン設定 ===
+  evolution:
+    fitness_weights:
+      quality_score: 0.35
+      completion_rate: 0.30
+      efficiency: 0.20
+      growth_rate: 0.15
+    fitness_window: 20
+    few_shot_max_per_domain: 100
+    snapshot_interval: 5
 ```
 
-- `native`: CLAUDE.mdベースの現行動作
-- `command`: config.yamlのコマンドベース
+### 3.2 設定項目の説明
 
-**利点**: 既存動作を完全に保持。
-**欠点**: TANEBIに**2つの動作モード**が生まれる。全てのフロー制御コードに `if mode == native` 分岐が入る。これは旧設計の`case "$adapter_set"`よりさらに悪い — コアの全ステップに分岐が入るため。
-**判定**: **却下** — 設計原則に最も反する。コアに二重構造を持ち込む最悪の選択。
+#### tanebi.execution
 
-### 4.3 推奨案の詳細設計: Builtin Command方式
+| キー | 説明 | デフォルト |
+|------|------|----------|
+| `max_parallel_workers` | Wave 内の最大並列 Worker 数 | 5 |
+| `worker_max_turns` | Worker の最大ターン数（LLM 対話上限） | 30 |
+| `default_model` | デフォルトモデル ID | `claude-sonnet-4-6` |
 
-#### TANEBIコアの実装
+#### tanebi.plugins
+
+Executor の実装環境に関わらず、プラグインの有効/無効はここで管理する。
+Executor はどのプラグインが有効かを意識する必要はない。プラグインは Core 側で管理される。
+
+| プリセット | 説明 |
+|----------|------|
+| `minimal` | trust + approval のみ有効（シンプル構成） |
+| `standard` | trust + progress + approval + cost + evolution 有効 |
+| `full` | 全プラグイン有効 |
+| `custom` | 個別設定（各プラグインキーで制御） |
+
+#### tanebi.paths
+
+Executor が Event Store やファイルを読み書きする際のパス起点。
+サブディレクトリ構成を変更した場合はここを更新する。
+
+#### tanebi.evolution
+
+進化エンジンの設定。Executor の実装環境によらず同じパラメータを使用する。
+
+### 3.3 環境別の考慮点
+
+| 環境 | 考慮点 |
+|------|--------|
+| subprocess | `TANEBI_ROOT` をプロジェクトルートに設定。全パスは相対パスでも動作 |
+| Docker | `work/`・`personas/`・`knowledge/` をボリュームマウント。コンテナ終了後もデータが残ることを確認 |
+| Lambda/Cloud | エフェメラル環境では `paths` を S3 等の永続ストレージに対応させた形で運用する（Section 5.3 参照） |
+
+---
+
+## 4. subprocess Executor 実装（リファレンス）
+
+### 4.1 リファレンス実装の概要
+
+TANEBI は subprocess 向けの Executor リファレンス実装を `scripts/` に同梱している。
+
+| スクリプト | 役割 | 位置づけ |
+|-----------|------|---------|
+| `scripts/command_executor.sh` | config.yaml 設定を読み取り subprocess_worker.sh へディスパッチ | **Executor**（Core 外部） |
+| `scripts/subprocess_worker.sh` | `claude -p` で Decomposer / Worker を起動 | **Executor**（Core 外部） |
+| `scripts/emit_event.sh` | Event Store にイベントを書き込む | Event Store インターフェース（Core / Executor 共用） |
+
+**重要**: `command_executor.sh` は TANEBI Core の一部ではない。**Executor 側のリファレンス実装**である。
+Core は `emit_event.sh` を通じて `*.requested` イベントを Event Store に書き込むだけ。
+`command_executor.sh` はその後段で動作する。
+
+### 4.2 command_executor.sh の動作
+
+```
+Usage:
+  bash scripts/command_executor.sh [--dry-run] <port_name> [key=value ...]
+```
+
+**ドライラン（確認）**:
 
 ```bash
-# scripts/command_executor.sh — 変更箇所
-
-execute_port() {
-  local port_name="$1"
-  shift
-
-  local cmd_template
-  cmd_template=$(read_config "tanebi.ports.${port_name}.command")
-
-  # プレースホルダー置換（前述の通り）
-  local cmd
-  cmd=$(resolve_placeholders "$cmd_template" "$@")
-
-  # === ここが唯一の分岐 ===
-  if [[ "$cmd" == builtin:* ]]; then
-    local builtin_name="${cmd#builtin:}"
-    execute_builtin "$builtin_name" "$port_name" "$@"
-  else
-    # 通常のshell exec
-    local timeout_sec
-    timeout_sec=$(read_config "tanebi.ports.${port_name}.timeout" "120")
-    timeout "$timeout_sec" bash -c "$cmd"
-  fi
-}
-
-execute_builtin() {
-  local builtin_name="$1"
-  local port_name="$2"
-  shift 2
-
-  case "$builtin_name" in
-    task_tool)
-      # Task tool呼び出し（CLAUDE.mdから使用時のみ動作）
-      local args_yaml
-      args_yaml=$(read_config "tanebi.ports.${port_name}.args")
-      # Task tool invocation logic here
-      # （CLAUDE.mdのオーケストレーターが実際にTask toolを呼ぶ）
-      ;;
-    *)
-      echo "[TANEBI] ERROR: Unknown builtin: $builtin_name" >&2
-      return 1
-      ;;
-  esac
-}
+bash scripts/command_executor.sh --dry-run worker_launch.execute \
+  subtask_file=work/cmd_001/plan_subtasks/subtask_001.md \
+  persona_file=personas/active/backend_specialist_v2.yaml \
+  output_path=work/cmd_001/results/subtask_001.md
 ```
 
-**コア内部のcase文について**: `execute_builtin` 内に `case "$builtin_name"` が存在する。しかしこれは旧設計の `case "$adapter_set"` とは根本的に異なる:
+出力例:
+```
+[command_executor] Dry run:
+  Port:    worker_launch.execute
+  Command: bash scripts/subprocess_worker.sh execute work/cmd_001/...
+  Timeout: 600s
+```
 
-| 旧設計のcase | 新設計のcase |
-|-------------|-------------|
-| **全Port**に影響（adapter_setで全Port実装が切り替わる） | **呼び出し方式のみ**に影響（特定Portの特定コマンドだけ） |
-| 新adapter追加のたびにcase分岐が増える | builtin追加は「外部コマンドで代替できない技術的理由」がある時のみ |
-| アダプター固有ロジックがコアに入る | builtinの中身は「Task toolを呼ぶ」という1行だけ |
+内部動作:
+1. `TANEBI_ROOT/config.yaml` からポートの `command` 文字列を読み取る
+2. `{subtask_file}` 等のプレースホルダーを実引数で置換する
+3. `timeout` ラップして `bash -c "$CMD"` で実行する（`CLAUDECODE` / `CLAUDE_CODE_ENTRYPOINT` を unset してから実行）
 
-#### claude-native config.yaml プロファイル
+### 4.3 subprocess_worker.sh の動作
+
+`subprocess_worker.sh` は `claude -p`（subprocess モード）で Decomposer または Worker を起動する。
+
+```bash
+# Decompose モード
+bash scripts/subprocess_worker.sh decompose \
+  <request_file> <plan_output> <persona_list> <cmd_id>
+
+# Execute モード
+bash scripts/subprocess_worker.sh execute \
+  <subtask_file> <output_path> [<persona_file>]
+```
+
+**内部動作**:
+
+```
+subprocess_worker.sh
+  └── claude -p
+        --system-prompt <templates/decomposer.md or worker_base.md>
+        --allowed-tools Read,Write,Glob,Grep,Bash
+        --permission-mode acceptEdits
+        (stdin: リクエスト内容 + Persona情報)
+        (stdout: 結果ファイルに書き出し)
+```
+
+`claude -p` 実行前に `CLAUDECODE` と `CLAUDE_CODE_ENTRYPOINT` を unset することで
+subprocess として正常動作する（TANEBI subprocess モードの既知の要件）。
+
+### 4.4 decompose.requested フロー例
+
+**前提**: Core が `decompose.requested` イベントを Event Store に書き込み済み。
 
 ```yaml
-tanebi:
-  ports:
-    worker_launch:
-      decompose:
-        command: "builtin:task_tool"
-        timeout: 120
-        args:
-          instructions: |
-            You are TANEBI Decomposer.
-            Read the request at {request_file}.
-            Available personas: {persona_list}.
-            Create a decomposition plan and write to {plan_output}.
-          max_turns: 10
-      execute:
-        command: "builtin:task_tool"
-        timeout: 600
-        args:
-          instructions: |
-            You are TANEBI Worker with persona {persona_file}.
-            Complete the subtask defined in {subtask_file}.
-            Reference few-shot examples: {few_shot_files}.
-            Write your result to {output_path}.
-          max_turns: 20
-      execute_wave:
-        # 省略時: execute.commandを並列Task tool呼び出し
-        timeout: 900
-
-    event_emit:
-      command: "bash scripts/emit_event.sh {work_dir}/{cmd_id} {event_type} {payload}"
-
-    state_read:
-      command: "cat {resource_path}"
-    state_write:
-      command: "tee {resource_path} > /dev/null"
-
-    knowledge_read:
-      command: "ls knowledge/few_shot_bank/{domain}/ | head -n {limit}"
-
-    security_check:
-      command: "bash modules/trust/trust_module.sh on_task_assign {persona_id} {risk_level}"
-    security_update:
-      command: "bash modules/trust/trust_module.sh on_task_complete {persona_id}"
+# work/cmd_001/events/002_decompose.requested.yaml
+event_type: decompose.requested
+timestamp: "2026-03-01T12:00:00"
+cmd_dir: work/cmd_001
+payload:
+  cmd_id: cmd_001
+  request_path: work/cmd_001/request.md
+  persona_list: backend_specialist_v2,test_writer_v1
+  plan_output_path: work/cmd_001/plan.md
 ```
 
-### 4.4 トレードオフ表
+**Executor の処理（subprocess）**:
 
-| 観点 | 案1 Bridge | 案2 Fallback | **案3 Builtin** | 案4 Dual Mode |
-|------|-----------|-------------|-----------------|---------------|
-| AP-2適合度 | ◎（表面上） | ✕ | ○（微小違反） | ✕✕ |
-| 設計の誠実さ | ✕（偽コマンド） | △（暗黙知） | **◎（明示的）** | ○ |
-| コア内分岐数 | 0 | 全Port分 | **1** | 全Step分 |
-| config.yaml明示性 | ◎ | ✕ | **◎** | ○ |
-| 新adapter追加コスト | ゼロ | ゼロ | **ゼロ** | ゼロ |
-| 将来のbuiltin消滅 | — | — | **可能** | — |
-| 実装複雑度 | 低 | 低 | **低** | 高 |
+```bash
+# 1. *.requested イベントを検出・ペイロードを読み取る
+# （実際には Core が直接 subprocess_worker.sh を呼ぶか、
+#   または Executor がイベントファイルを監視して処理する）
 
-### 4.5 将来展望: builtinが消える日
+# 2. subprocess_worker.sh を呼ぶ
+bash scripts/subprocess_worker.sh decompose \
+  "work/cmd_001/request.md" \
+  "work/cmd_001/plan.md" \
+  "backend_specialist_v2,test_writer_v1" \
+  "cmd_001"
 
-Claude Code（またはAnthropic API）が以下のいずれかを提供した時点で、`builtin:task_tool` は不要になる:
+# 3. plan.md が生成されたことを確認
+# 4. task.decomposed イベントを発行
+bash scripts/emit_event.sh "work/cmd_001" "task.decomposed" "
+cmd_id: cmd_001
+plan:
+  subtasks:
+    - id: subtask_001
+      description: APIエンドポイント実装
+      persona: backend_specialist_v2
+      wave: 1
+    - id: subtask_002
+      description: ユニットテスト作成
+      persona: test_writer_v1
+      wave: 2
+  waves: 2
+  persona_assignments:
+    - subtask_id: subtask_001
+      persona_id: backend_specialist_v2
+    - subtask_id: subtask_002
+      persona_id: test_writer_v1
+"
+```
 
-1. **`claude --invoke-task '...'` CLI**: シェルからTask toolを呼べるCLIサブコマンド
-2. **MCP経由のTask tool呼び出し**: 外部プロセスからMCPプロトコルでTask toolを利用
-3. **`claude -p '...'` の成熟**: 現時点でも`claude --print`はあるが、これは独立プロセス起動であり、セッション内コンテキスト共有がない。将来的にセッション共有が可能になれば代替可能
+### 4.5 execute.requested フロー例
 
-その時の移行:
+**前提**: Core が `execute.requested` イベントを Event Store に書き込み済み。
+
 ```yaml
-# Before (builtin)
-worker_launch:
-  execute:
-    command: "builtin:task_tool"
-    args:
-      instructions: "..."
-
-# After (external command)
-worker_launch:
-  execute:
-    command: "claude --invoke-task --session={session_id} --instructions '{instructions}'"
+# work/cmd_001/events/004_execute.requested.yaml
+event_type: execute.requested
+timestamp: "2026-03-01T12:05:00"
+cmd_dir: work/cmd_001
+payload:
+  cmd_id: cmd_001
+  subtask_id: subtask_001
+  subtask_file: work/cmd_001/plan_subtasks/subtask_001.md
+  persona_file: personas/active/backend_specialist_v2.yaml
+  output_path: work/cmd_001/results/subtask_001.md
+  wave: 1
 ```
 
-config.yamlの変更のみ。**TANEBIコアの変更はゼロ。** そしてbuiltinのcase文は安全に削除できる。
+**Executor の処理（subprocess）**:
+
+```bash
+# 1. *.requested イベントを検出・ペイロードを読み取る
+
+# 2. worker.started イベントを発行（オプション。progress プラグインが表示に使用）
+bash scripts/emit_event.sh "work/cmd_001" "worker.started" "
+cmd_id: cmd_001
+subtask_id: subtask_001
+persona_id: backend_specialist_v2
+wave: 1
+"
+
+# 3. subprocess_worker.sh を呼ぶ
+bash scripts/subprocess_worker.sh execute \
+  "work/cmd_001/plan_subtasks/subtask_001.md" \
+  "work/cmd_001/results/subtask_001.md" \
+  "personas/active/backend_specialist_v2.yaml"
+
+# 4. result ファイルが生成されたことを確認（YAML frontmatter を解析して status/quality/domain を取得）
+
+# 5. worker.completed イベントを発行
+bash scripts/emit_event.sh "work/cmd_001" "worker.completed" "
+cmd_id: cmd_001
+subtask_id: subtask_001
+status: success
+quality: GREEN
+domain: backend
+"
+```
+
+### 4.6 Worker 結果ファイル（ResultYAML）の形式
+
+Worker は YAML frontmatter 付き Markdown を `output_path` に出力する:
+
+```markdown
+---
+subtask_id: subtask_001
+persona: backend_specialist_v2
+status: success
+quality: GREEN
+domain: backend
+duration_estimate: medium
+---
+
+# 実装結果
+
+[タスクの成果物をここに記述]
+```
+
+`status`・`quality`・`domain` は `worker.completed` イベントのペイロードとして使用する。
+
+### 4.7 Worker からのイベント発行パターン
+
+Worker（subprocess_worker.sh が起動した `claude -p` プロセス）が完了イベントを発行する際、
+`scripts/emit_event.sh` を直接呼ぶか、ラッパーの `scripts/tanebi-callback.sh` を呼ぶかを選べる。
+
+**直接 emit_event.sh を呼ぶ**:
+
+```bash
+# Worker スクリプトの末尾
+bash scripts/emit_event.sh "$CMD_DIR" "worker.completed" "
+cmd_id: $CMD_ID
+subtask_id: $SUBTASK_ID
+status: success
+quality: GREEN
+domain: backend
+"
+```
+
+**tanebi-callback.sh 経由で呼ぶ**（`emit_event.sh` のラッパー）:
+
+```bash
+# Worker スクリプトの末尾（同等の動作）
+bash scripts/tanebi-callback.sh "worker.completed" \
+  cmd_id="$CMD_ID" subtask_id="$SUBTASK_ID" status="success"
+```
+
+どちらも同じ Event Store に書き込む。`tanebi-callback.sh` は `emit_event.sh` を呼ぶだけのシンプルなラッパー。
+
+### 4.8 Wave 並列実行パターン（subprocess）
+
+同一 Wave の複数サブタスクを並列実行する:
+
+```bash
+# Wave 1 のサブタスクリストを取得
+SUBTASKS=("subtask_001" "subtask_002" "subtask_003")
+
+# 並列実行（xargs -P）
+printf '%s\n' "${SUBTASKS[@]}" | xargs -P 4 -I {} bash -c '
+  subtask_id="{}"
+  bash scripts/subprocess_worker.sh execute \
+    "work/cmd_001/plan_subtasks/${subtask_id}.md" \
+    "work/cmd_001/results/${subtask_id}.md" \
+    "personas/active/..."
+  # 完了後にイベント発行
+  bash scripts/emit_event.sh "work/cmd_001" "worker.completed" "
+    cmd_id: cmd_001
+    subtask_id: ${subtask_id}
+    status: success
+    quality: GREEN
+    domain: backend
+  "
+'
+```
 
 ---
 
-## 5. 環境別 config.yaml プロファイル
+## 5. 環境別実装例
 
-### 5.1 subprocess（最も単純）
+### 5.1 subprocess
+
+#### 概要
+
+TANEBI リポジトリをローカルにクローンし、`claude -p` で各 Worker を起動する最もシンプルな構成。
+追加インフラ不要。Event Store はローカルファイルシステム。
+
+#### 構成図
+
+```
+Host Machine
+├── TANEBI_ROOT/
+│   ├── CLAUDE.md（Core + フロー決定ロジック）
+│   ├── config.yaml
+│   ├── work/cmd_NNN/events/   ← Event Store（ローカルファイル）
+│   ├── personas/
+│   ├── knowledge/
+│   ├── scripts/
+│   │   ├── command_executor.sh  ← Executor リファレンス実装
+│   │   └── subprocess_worker.sh ← claude -p ブリッジ
+│   └── templates/
+│
+└── claude (CLI)               ← subprocess として起動される
+```
+
+#### config.yaml 例
 
 ```yaml
 tanebi:
-  ports:
-    worker_launch:
-      decompose:
-        command: "bash scripts/run_worker.sh decomposer {request_file} {persona_list} {plan_output}"
-        timeout: 120
-      execute:
-        command: "bash scripts/run_worker.sh worker {subtask_file} {persona_file} {few_shot_files} {output_path}"
-        timeout: 600
-      execute_wave:
-        command: "echo {subtask_file} | xargs -P 4 -I {} bash scripts/run_worker.sh worker {} {persona_file} '' {output_path}"
-        timeout: 900
-
-    event_emit:
-      command: "bash scripts/emit_event.sh {work_dir}/{cmd_id} {event_type} {payload}"
-
-    state_read:
-      command: "cat {resource_path}"
-    state_write:
-      command: "tee {resource_path} > /dev/null"
-
-    knowledge_read:
-      command: "ls knowledge/few_shot_bank/{domain}/ | head -n {limit}"
-
-    security_check:
-      command: "bash modules/trust/trust_module.sh on_task_assign {persona_id} {risk_level}"
-    security_update:
-      command: "bash modules/trust/trust_module.sh on_task_complete {persona_id}"
+  version: "1.0"
+  plugins:
+    preset: "standard"
+  paths:
+    work_dir: "work"
+    persona_dir: "personas/active"
+    knowledge_dir: "knowledge"
+    few_shot_dir: "knowledge/few_shot_bank"
+  execution:
+    max_parallel_workers: 4    # ローカルマシンのCPU/メモリに合わせて調整
+    worker_max_turns: 30
+    default_model: "claude-sonnet-4-6"
+  evolution:
+    few_shot_max_per_domain: 100
+    snapshot_interval: 5
 ```
+
+#### 動作確認
+
+```bash
+# Executor ドライラン（実行前の確認）
+bash scripts/command_executor.sh --dry-run worker_launch.execute \
+  subtask_file=work/cmd_001/plan_subtasks/subtask_001.md \
+  persona_file=personas/active/generalist_v1.yaml \
+  output_path=work/cmd_001/results/subtask_001.md
+
+# 実際に Executor を実行
+bash scripts/subprocess_worker.sh execute \
+  work/cmd_001/plan_subtasks/subtask_001.md \
+  work/cmd_001/results/subtask_001.md \
+  personas/active/generalist_v1.yaml
+
+# 完了後にイベント発行
+bash scripts/emit_event.sh "work/cmd_001" "worker.completed" "
+cmd_id: cmd_001
+subtask_id: subtask_001
+status: success
+quality: GREEN
+domain: backend
+"
+```
+
+#### 注意点
+
+- `CLAUDECODE` / `CLAUDE_CODE_ENTRYPOINT` は `subprocess_worker.sh` が自動で unset する
+- 並列 Worker 起動時は `xargs -P` 等を使用（Wave 内の並列実行）
+- ローカルファイルが Event Store のため、永続化・バックアップは別途考慮
 
 ### 5.2 Docker
 
-```yaml
-tanebi:
-  ports:
-    worker_launch:
-      decompose:
-        command: >-
-          docker run --rm
-          --network tanebi-net
-          --memory 512m --cpus 1.0
-          -e TANEBI_ROOT=/app
-          -v work:/app/work
-          -v personas:/app/personas:ro
-          -v templates:/app/templates:ro
-          tanebi-worker:latest
-          --role=decomposer
-          --request=/app/work/{cmd_id}/request.md
-          --plan-output=/app/work/{cmd_id}/plan.md
-        timeout: 120
-      execute:
-        command: >-
-          docker run --rm
-          --network tanebi-net
-          --memory 512m --cpus 1.0
-          -e TANEBI_ROOT=/app
-          -v work:/app/work
-          -v personas:/app/personas:ro
-          -v knowledge:/app/knowledge:ro
-          -v templates:/app/templates:ro
-          tanebi-worker:latest
-          --role=worker
-          --subtask-id={subtask_id}
-          --persona=/app/personas/active/{persona_id}.yaml
-          --output=/app/work/{cmd_id}/results/{subtask_id}.md
-        timeout: 600
-      execute_wave:
-        # 省略: TANEBIコアがexecute.commandを並列呼び出し
-        timeout: 900
+#### 概要
 
-    event_emit:
-      command: "bash scripts/emit_event.sh {work_dir}/{cmd_id} {event_type} {payload}"
+Worker を Docker コンテナとして起動する構成。ホスト環境に依存せず Worker を実行できる。
+Event Store（`work/`）と Persona Store（`personas/`）はボリュームマウントで共有する。
 
-    state_read:
-      command: "cat {resource_path}"
-    state_write:
-      command: "tee {resource_path} > /dev/null"
+#### 構成図
 
-    knowledge_read:
-      command: "ls knowledge/few_shot_bank/{domain}/ | head -n {limit}"
-
-    security_check:
-      command: "bash modules/trust/trust_module.sh on_task_assign {persona_id} {risk_level}"
-    security_update:
-      command: "bash modules/trust/trust_module.sh on_task_complete {persona_id}"
-
-    # Polling fallback（コールバック未着時の安全策）
-    worker_status_check:
-      command: "docker inspect {container_id} --format '{{.State.Status}}'"
-      polling_interval: 5
+```
+Host Machine
+├── TANEBI_ROOT/
+│   ├── CLAUDE.md（Core + フロー決定ロジック）
+│   ├── config.yaml
+│   └── work/cmd_NNN/events/   ← Event Store（ホスト上のファイル）
+│
+└── Docker
+    ├── tanebi-worker:latest   ← Worker コンテナイメージ
+    │   ├── scripts/subprocess_worker.sh
+    │   ├── templates/
+    │   └── claude (CLI)
+    │
+    └── Volumes
+        ├── work/     → /app/work        （Event Store 共有）
+        ├── personas/ → /app/personas    （Persona Store 共有）
+        └── knowledge/→ /app/knowledge   （知識バンク共有）
 ```
 
-### 5.3 Lambda / Step Functions
+#### Docker Executor の実装
 
-```yaml
-tanebi:
-  ports:
-    worker_launch:
-      decompose:
-        command: >-
-          aws lambda invoke
-          --function-name tanebi-worker
-          --invocation-type RequestResponse
-          --payload '{"role":"decomposer","cmd_id":"{cmd_id}","payload":{"request_s3_key":"work/{cmd_id}/request.md","persona_list":[{persona_list}],"plan_s3_key":"work/{cmd_id}/plan.md"}}'
-          /tmp/tanebi_decompose_result.json
-          && cat /tmp/tanebi_decompose_result.json
-        timeout: 120
-      execute:
-        command: >-
-          aws lambda invoke
-          --function-name tanebi-worker
-          --invocation-type Event
-          --payload '{"role":"worker","cmd_id":"{cmd_id}","payload":{"subtask":{"id":"{subtask_id}"},"persona_s3_key":"personas/active/{persona_id}.yaml","output_s3_key":"work/{cmd_id}/results/{subtask_id}.md"}}'
-          /tmp/tanebi_execute_result.json
-        timeout: 600
-      execute_wave:
-        # Step Functions Map Stateを使う場合
-        command: >-
-          aws stepfunctions start-sync-execution
-          --state-machine-arn arn:aws:states:us-east-1:123456789:stateMachine:tanebi-execute-wave
-          --input '{"cmd_id":"{cmd_id}","subtasks":{subtask_list_json}}'
-          --query 'output'
-          --output text
-        timeout: 900
+`execute.requested` イベントを検出したら `docker run` で Worker コンテナを起動する:
 
-    event_emit:
-      command: >-
-        aws sqs send-message
-        --queue-url https://sqs.us-east-1.amazonaws.com/123456789/tanebi-events.fifo
-        --message-body '{payload}'
-        --message-group-id '{cmd_id}'
-        --message-deduplication-id '{idempotency_key}'
-
-    state_read:
-      command: "aws s3 cp s3://tanebi-data/{resource_type}/{resource_id} -"
-    state_write:
-      command: "aws s3 cp - s3://tanebi-data/{resource_type}/{resource_id}"
-
-    knowledge_read:
-      command: "aws s3 ls s3://tanebi-data/few_shot_bank/{domain}/ --recursive | head -n {limit} | awk '{print $4}'"
-
-    security_check:
-      command: >-
-        aws lambda invoke
-        --function-name tanebi-trust-check
-        --invocation-type RequestResponse
-        --payload '{"persona_id":"{persona_id}","risk_level":"{risk_level}"}'
-        /tmp/tanebi_trust_result.json
-        && jq -r '.decision' /tmp/tanebi_trust_result.json | grep -q allow
-    security_update:
-      command: >-
-        aws lambda invoke
-        --function-name tanebi-trust-update
-        --invocation-type Event
-        --payload '{"persona_id":"{persona_id}"}'
-        /dev/null
-
-    # Polling: SQS long polling で Worker 完了検知
-    worker_status_check:
-      command: >-
-        aws sqs receive-message
-        --queue-url https://sqs.us-east-1.amazonaws.com/123456789/tanebi-completions.fifo
-        --wait-time-seconds 20
-      polling_interval: 0   # SQS側で待機
+```bash
+# Executor（ホスト側）の処理
+docker run --rm \
+  --memory 512m --cpus 1.0 \
+  -e TANEBI_ROOT=/app \
+  -v "$(pwd)/work:/app/work" \
+  -v "$(pwd)/personas:/app/personas:ro" \
+  -v "$(pwd)/knowledge:/app/knowledge:ro" \
+  -v "$(pwd)/templates:/app/templates:ro" \
+  tanebi-worker:latest \
+  execute \
+  /app/work/cmd_001/plan_subtasks/subtask_001.md \
+  /app/work/cmd_001/results/subtask_001.md \
+  /app/personas/active/backend_specialist_v2.yaml
 ```
 
-### 5.4 混成構成の例（Port単位で混合）
+コンテナ内の `subprocess_worker.sh` が `claude -p` を実行し、結果をマウントされた `work/` に書き込む。
+処理完了後、ホスト側の Executor が `emit_event.sh` で `worker.completed` を発行する。
 
-コマンド設定モデルの最大の利点: **Port単位で自由に混合できる**。
+#### Docker イメージの構成例
+
+```dockerfile
+FROM ubuntu:24.04
+
+# Claude CLI のインストール
+RUN apt-get update && apt-get install -y curl nodejs npm
+RUN npm install -g @anthropic-ai/claude-code
+
+# TANEBI scripts / templates をコピー
+COPY scripts/ /app/scripts/
+COPY templates/ /app/templates/
+
+WORKDIR /app
+ENTRYPOINT ["bash", "/app/scripts/subprocess_worker.sh"]
+```
+
+#### config.yaml 例
 
 ```yaml
 tanebi:
-  ports:
-    # Worker起動はDocker（重い処理をコンテナ分離）
-    worker_launch:
-      execute:
-        command: "docker run --rm -v work:/app/work tanebi-worker:latest --subtask-id={subtask_id}"
-
-    # イベントはRedis（低レイテンシが必要）
-    event_emit:
-      command: "redis-cli PUBLISH tanebi.events.{event_type} '{payload}'"
-
-    # 状態保存はS3（永続化が必要）
-    state_read:
-      command: "aws s3 cp s3://tanebi-data/{resource_type}/{resource_id} -"
-    state_write:
-      command: "aws s3 cp - s3://tanebi-data/{resource_type}/{resource_id}"
-
-    # セキュリティはローカル（低レイテンシ）
-    security_check:
-      command: "bash modules/trust/trust_module.sh on_task_assign {persona_id} {risk_level}"
+  version: "1.0"
+  plugins:
+    preset: "standard"
+  paths:
+    work_dir: "work"
+    persona_dir: "personas/active"
+    knowledge_dir: "knowledge"
+  execution:
+    max_parallel_workers: 8    # コンテナ並列数
+    worker_max_turns: 30
+    default_model: "claude-sonnet-4-6"
+  evolution:
+    few_shot_max_per_domain: 100
+    snapshot_interval: 5
 ```
 
-旧設計（`adapter_set: docker`）ではこの混成構成は不可能だった。
+#### 並列 Worker 起動
 
----
-
-## 6. Inbound Port設計 — コールバックスクリプトモデル
-
-### 6.1 設計思想: 対称的コマンドモデル
-
-補足設計方針:
-> 「呼ぶ側だけでなく、受ける側もコマンド設定モデルで考えよ。Worker完了時にtanebiに結果を返す手段として、tanebiが用意しているスクリプトを実行するだけ、というシンプルな形もありうる。」
-
-これにより、TANEBIのPort設計は**完全に対称的**になる:
-
-```
-┌──────────────────────────────────────────────────────────┐
-│ Outbound Port（TANEBIが外部を呼ぶ）                        │
-│                                                          │
-│   TANEBI core                                            │
-│     → command_executor.sh                                │
-│       → config.yaml の tanebi.ports.X.command を読む      │
-│         → プレースホルダー置換                              │
-│           → shell exec                                   │
-│                                                          │
-│   TANEBIが「やりたいこと」をコマンドとして実行する            │
-├──────────────────────────────────────────────────────────┤
-│ Inbound Port（外部がTANEBIに通知する）                      │
-│                                                          │
-│   Worker                                                 │
-│     → tanebi-callback.sh <event_type> key=value ...      │
-│       → emit_event.sh を直接呼び出し                       │
-│         → イベント発行（環境別の転送はevent_emitが吸収）     │
-│                                                          │
-│   Workerが「伝えたいこと」をTANEBI提供の固定APIで通知する    │
-└──────────────────────────────────────────────────────────┘
-```
-
-**核心**: Outbound Portは「config.yamlからコマンドを読んで実行する」設定可能なメカニズム。一方、Inbound（callbacks）はTANEBIが提供する**固定API仕様**であり、Workerは `tanebi-callback.sh` を叩くだけ。内部的には `emit_event.sh` を通じてイベントを発行し、環境別の転送方式の違いは `event_emit` コマンド設定が吸収する。Workerはその先の実装を一切知る必要がない。
-
-### 6.2 tanebi-callback.sh — TANEBIが提供する固定APIスクリプト
+同一 Wave の Worker を並列コンテナとして起動する例:
 
 ```bash
-#!/usr/bin/env bash
-# tanebi-callback.sh — TANEBIへの完了通知スクリプト（固定API）
-# Usage: bash scripts/tanebi-callback.sh <event_type> [key=value ...]
-#
-# 例:
-#   bash scripts/tanebi-callback.sh worker_completed cmd_id=cmd_042 status=success
-#   bash scripts/tanebi-callback.sh worker_progress cmd_id=cmd_042 progress=50
+# Wave 1 の全 execute.requested を並列処理
+for subtask_id in subtask_001 subtask_002 subtask_003; do
+  docker run --rm -d \
+    --name "tanebi-worker-${subtask_id}" \
+    -v "$(pwd)/work:/app/work" \
+    -v "$(pwd)/personas:/app/personas:ro" \
+    tanebi-worker:latest \
+    execute \
+    "/app/work/cmd_001/plan_subtasks/${subtask_id}.md" \
+    "/app/work/cmd_001/results/${subtask_id}.md" \
+    "/app/personas/active/generalist_v1.yaml"
+done
 
-CALLBACK_TYPE="${1:?event_type required}"
-shift
-
-TANEBI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# callbacksはconfigで差し替えるものではない。
-# event_emit Portを通じてTANEBIにイベントを送る（環境別の転送設定はevent_emitが担う）。
-bash "${TANEBI_ROOT}/scripts/emit_event.sh" "${CALLBACK_TYPE}" "$@"
+# 全コンテナの完了を待つ
+for subtask_id in subtask_001 subtask_002 subtask_003; do
+  docker wait "tanebi-worker-${subtask_id}"
+  bash scripts/emit_event.sh "work/cmd_001" "worker.completed" "
+    cmd_id: cmd_001
+    subtask_id: ${subtask_id}
+    status: success
+    quality: GREEN
+    domain: backend
+  "
+done
 ```
 
-### 6.3 callbacksは設定項目ではなく固定API仕様
+#### 注意点
 
-`tanebi.callbacks` はconfig.yamlで設定するPortではない。
+- Event Store (`work/`) は必ずホストにマウントすること。コンテナ内に閉じると Core がイベントを読めない
+- Persona の並列更新は `flock` で排他制御する（`evolve.sh` が自動で行う）
+- コンテナ起動のオーバーヘッドがあるため、軽量タスクでは subprocess の方が速い場合がある
 
-**設計上の区別:**
+### 5.3 Lambda / Cloud Run
 
-| 種別 | 仕組み | 設定 |
-|------|--------|------|
-| tanebi.ports（Outbound） | TANEBIが外部を呼ぶ | config.yamlで差し替え可能 |
-| tanebi-callback.sh（Inbound） | Workerがtanebiを呼ぶ | 固定API仕様（設定不要） |
+#### 概要
 
-callbacksはTANEBIが提供する固定インターフェースであり、
-Workerは単純に `bash scripts/tanebi-callback.sh <event_type> [key=value ...]` を実行するだけ。
-環境（subprocess/Docker/Lambda）にかかわらず、呼び出し方は変わらない。
+AWS Lambda・Google Cloud Run 等のサーバーレス環境で Worker を実行する構成。
+各 Worker 呼び出しはステートレスなため、永続データは外部ストレージ（S3 等）に置く必要がある。
 
-内部的には tanebi-callback.sh が event_emit Port を通じて完了イベントを送信する。
-環境別のイベント転送方式の違いは event_emit コマンド設定が吸収する。
+#### 構成図
 
-### 6.4 Workerの責務
+```
+TANEBI Core（常駐: EC2 / ローカル等）
+  │
+  ├── Event Store（ローカル or S3）
+  │     └── *.requested イベントを書き込み
+  │
+  └── Executor Dispatcher（ホスト側）
+        ├── *.requested イベントを検出
+        ├── Lambda を invoke（非同期）
+        └── *.completed イベントを SQS / S3 ポーリングで待機
 
-**Workerは `tanebi-callback.sh` を叩くだけ。** それ以上の知識は不要。
-
-```bash
-# Worker実行スクリプトの末尾（全環境共通パターン）
-
-# タスク実行...
-do_work "$SUBTASK_FILE" "$PERSONA_FILE" > "$OUTPUT_PATH"
-
-# 完了通知 — これだけ
-bash scripts/tanebi-callback.sh worker_completed \
-  cmd_id="$CMD_ID" \
-  subtask_id="$SUBTASK_ID" \
-  status="success" \
-  result_path="$OUTPUT_PATH"
+Lambda / Cloud Run（ステートレス Worker）
+  ├── execute.requested ペイロードを受信
+  ├── S3 から subtask_file・persona_file をダウンロード
+  ├── Worker 処理（LLM 呼び出し等）
+  ├── 成果物を S3 に書き込み
+  └── *.completed イベントを SQS に発行
 ```
 
-Docker環境では `tanebi-callback.sh` がvolume mountされている。Lambda環境ではLambda Layerに含まれている。subprocess環境ではプロジェクトディレクトリ内にある。**Workerは環境を問わず同じ呼び出し方をする。**
+#### イベント配信方式
 
-### 6.5 Polling Fallback（Orchestrator側の補助）
+**方式 1: S3 イベントトリガー**
 
-コールバックが何らかの理由で届かない場合の安全策。Outbound Portとして設定。
+```
+Core が work/cmd_001/events/002_decompose.requested.yaml を S3 にアップロード
+  → S3 Event Notification で Lambda 起動
+  → Lambda がイベントファイルを読んで処理
+  → Lambda が *.completed を SQS に書き込み
+  → Core が SQS をポーリングで完了を検知
+```
+
+**方式 2: SQS トリガー**
+
+```
+Core が SQS に {event_type: "execute.requested", payload: ...} をエンキュー
+  → SQS が Lambda をトリガー
+  → Lambda が処理
+  → Lambda が SQS completions キューに {event_type: "worker.completed", ...} をエンキュー
+  → Core が completions キューをポーリング
+```
+
+#### Lambda Worker の実装例（Python）
+
+```python
+# lambda_handler.py
+import json
+import boto3
+import subprocess
+import os
+
+def handler(event, context):
+    """TANEBI execute.requested イベントを処理"""
+    payload = event.get('payload', {})
+    cmd_id = payload['cmd_id']
+    subtask_id = payload['subtask_id']
+    subtask_s3_key = payload['subtask_file']
+    persona_s3_key = payload['persona_file']
+    output_s3_key = payload['output_path']
+
+    s3 = boto3.client('s3')
+    bucket = os.environ['TANEBI_BUCKET']
+
+    # 1. 入力ファイルを /tmp にダウンロード
+    s3.download_file(bucket, subtask_s3_key, '/tmp/subtask.md')
+    s3.download_file(bucket, persona_s3_key, '/tmp/persona.yaml')
+
+    # 2. Worker テンプレートを読む（Lambda Layer に同梱）
+    system_prompt = open('/opt/templates/worker_base.md').read()
+
+    # 3. 入力を構築（subprocess_worker.sh と同等）
+    worker_input = ""
+    if os.path.exists('/tmp/persona.yaml'):
+        worker_input += "## Persona情報\n\n"
+        worker_input += open('/tmp/persona.yaml').read() + "\n\n"
+    worker_input += "## サブタスク定義\n\n"
+    worker_input += open('/tmp/subtask.md').read()
+    worker_input += f"\n\n## 出力先\n\noutput_path: /tmp/result.md\n"
+
+    # 4. claude -p で Worker 実行
+    result = subprocess.run(
+        ['claude', '-p',
+         '--system-prompt', system_prompt,
+         '--allowed-tools', 'Read,Write',
+         '--output-format', 'text'],
+        input=worker_input,
+        capture_output=True, text=True, timeout=600,
+        env={**os.environ, 'CLAUDECODE': '', 'CLAUDE_CODE_ENTRYPOINT': ''}
+    )
+
+    # 5. 結果を S3 にアップロード
+    result_content = open('/tmp/result.md').read() if os.path.exists('/tmp/result.md') else result.stdout
+    s3.put_object(Bucket=bucket, Key=output_s3_key, Body=result_content)
+
+    # 6. ResultYAML から status/quality を解析
+    status, quality, domain = parse_result_yaml(result_content)
+
+    # 7. worker.completed イベントを SQS に発行
+    sqs = boto3.client('sqs')
+    sqs.send_message(
+        QueueUrl=os.environ['TANEBI_COMPLETIONS_QUEUE'],
+        MessageBody=json.dumps({
+            'event_type': 'worker.completed',
+            'payload': {
+                'cmd_id': cmd_id,
+                'subtask_id': subtask_id,
+                'status': status,
+                'quality': quality,
+                'domain': domain
+            }
+        }),
+        MessageGroupId=cmd_id,
+        MessageDeduplicationId=f'{cmd_id}_{subtask_id}'
+    )
+
+    return {'statusCode': 200}
+
+
+def parse_result_yaml(content: str) -> tuple:
+    """ResultYAML の frontmatter を解析"""
+    import re, yaml
+    match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+    if match:
+        fm = yaml.safe_load(match.group(1))
+        return (
+            fm.get('status', 'success'),
+            fm.get('quality', 'GREEN'),
+            fm.get('domain', 'general')
+        )
+    return 'success', 'GREEN', 'general'
+```
+
+#### config.yaml 例
 
 ```yaml
 tanebi:
-  ports:
-    # ... 既存のOutbound Ports ...
-
-    # Polling用のOutbound Port（コールバックのfallback）
-    worker_status_check:
-      command: "test -f {work_dir}/{cmd_id}/results/{subtask_id}.md && echo done || echo running"
-      polling_interval: 5   # 秒
+  version: "1.0"
+  plugins:
+    preset: "minimal"          # Cloud 環境では UI プラグインは最小限に
+    trust:
+      enabled: true
+    approval:
+      enabled: true
+      plan_review: true
+  paths:
+    work_dir: "work"           # ホスト側のローカルパス（Event Store はホストに置く）
+    persona_dir: "personas/active"
+  execution:
+    max_parallel_workers: 20   # Lambda は高並列が得意
+    worker_max_turns: 20
+    default_model: "claude-sonnet-4-6"
+  evolution:
+    few_shot_max_per_domain: 100
+    snapshot_interval: 5
 ```
 
-Orchestratorは `worker_status_check` Portを定期的にpollingし、コールバック未着のWorker完了を検知する。**これもOutbound Portの1つ** — Orchestratorが「Workerの状態を確認する」コマンドを実行するだけ。
+#### Persona の排他制御（Lambda 環境）
 
-Docker版:
-```yaml
-worker_status_check:
-  command: "docker inspect {container_id} --format '{{.State.Status}}'"
-  polling_interval: 5
+Lambda はステートレスなため、Persona 更新の競合対策が必要。
+
+**推奨パターン: Persona Manager をオーケストレーター（常駐プロセス）に集約**
+
+```
+Orchestrator（常駐: EC2 / ローカル等）
+  └── Persona Manager（single writer）
+      ├── state_read: "aws s3 cp s3://tanebi-data/personas/{id}.yaml /tmp/ && cat /tmp/{id}.yaml"
+      └── evolve.sh → Persona 更新 → S3 に書き戻し（排他制御）
+
+Worker Lambda（ステートレス）
+  └── Persona は read-only で参照（invoke payload 埋め込み or pre-signed URL）
 ```
 
-Lambda版:
-```yaml
-worker_status_check:
-  command: >-
-    aws sqs receive-message
-    --queue-url https://sqs.us-east-1.amazonaws.com/123456789/tanebi-completions.fifo
-    --wait-time-seconds 20
-  polling_interval: 0   # SQS long polling
-```
+#### 注意点
 
-### 6.6 Outbound / Inbound の対称性と違い
-
-| 方向 | 仕組み | 実行主体 | エントリポイント | 設定 |
-|------|--------|---------|---------------|------|
-| **Outbound** (TANEBI → 外部) | `tanebi.ports` | TANEBIコア | `command_executor.sh` | config.yamlで差し替え可能 |
-| **Inbound** (外部 → TANEBI) | `tanebi-callback.sh`（固定API） | Worker | `tanebi-callback.sh` → `emit_event.sh` | 設定不要（固定API仕様） |
-| **Polling** (TANEBI → 外部、状態確認) | `tanebi.ports.worker_status_check` | TANEBIコア | `command_executor.sh` | config.yamlで差し替え可能 |
-
-**Outbound Portはconfig.yamlで差し替え可能なコマンド設定モデル。** 一方、**Inbound（callbacks）はTANEBIが提供する固定API仕様**であり、Workerは環境を問わず `tanebi-callback.sh` を叩くだけ。環境別の転送方式の違いは `event_emit` コマンド設定（Outbound Port）が吸収する。TANEBIコアにもWorkerにも、環境固有の知識は入らない。
-
-### 6.7 Worker配布物
-
-Workerに配布する最小ファイルセット:
-
-| ファイル | 目的 | 配布方法 |
-|---------|------|---------|
-| `scripts/tanebi-callback.sh` | コールバックスクリプト（固定API） | Docker: volume mount / Lambda: Layer / subprocess: プロジェクト内 |
-| `scripts/emit_event.sh` | イベント発行スクリプト | 同上 |
-| `config.yaml` | tanebi.portsの参照のみ（callbacksセクション不要） | 同上 |
-
-Workerは `tanebi-callback.sh` さえ叩ければ、自分がDocker内にいるのかLambda内にいるのかsubprocessなのかを知る必要がない。**callbacksは固定APIのため環境別の設定は不要。環境差の吸収はevent_emit Port（Outbound側）が担う。**
+- コールドスタートに注意: Claude CLI の起動に数秒かかる場合がある
+- タイムアウト設定: Worker の処理時間（最大 20〜30 ターン）を考慮して Lambda タイムアウトを設定する（推奨: 600 秒以上）
+- S3 の `work/` パスとホストのローカル `work/` を同期させる仕組みが必要（Core はローカルファイルを前提とする場合）
 
 ---
 
-## 7. StateStore のエフェメラル環境設計
+## 6. イベントスキーマ参照
 
-### 7.1 問題の本質
+詳細スキーマは `events/schema.yaml` を参照すること。ここでは Executor が処理する主要イベントを示す。
 
-TANEBIの現実装は全てのI/Oがローカルファイルシステム前提。Lambda / Cloud Run / Fargate等のエフェメラル実行環境では、ファイルシステムはコンテナ終了時に消滅する。
+### 6.1 Core → Executor（依頼イベント）
 
-| データ種別 | 現在の保存先 | 揮発時の影響 |
-|-----------|------------|------------|
-| Persona YAML | `personas/active/*.yaml` | **致命的** — 全進化履歴喪失 |
-| タスク結果 | `work/cmd_NNN/results/*.md` | **致命的** — タスク成果喪失 |
-| イベントログ | `work/cmd_NNN/events/*.yaml` | **中程度** — 監査証跡喪失 |
-| コスト記録 | `work/cmd_NNN/cost.yaml` | **軽微** — 再計算可能 |
-| 計画 | `work/cmd_NNN/plan.md` | **致命的** — フロー中断 |
-| Few-Shot Bank | `knowledge/few_shot_bank/` | **中程度** — 知識蓄積リセット |
-
-### 7.2 コマンド設定モデルでの解決
-
-**エフェメラル環境はconfig.yamlのstate_read/state_writeコマンドで完全に解決される。**
+#### decompose.requested
 
 ```yaml
-# ローカル環境（ファイルベース — デフォルト）
-state_read:
-  command: "cat {resource_path}"
-state_write:
-  command: "tee {resource_path} > /dev/null"
-
-# エフェメラル環境（S3バックエンド）
-state_read:
-  command: "aws s3 cp s3://tanebi-data/{resource_type}/{resource_id} -"
-state_write:
-  command: "aws s3 cp - s3://tanebi-data/{resource_type}/{resource_id}"
-
-# DynamoDB（低レイテンシ・高頻度アクセス）
-state_read:
-  command: "aws dynamodb get-item --table-name tanebi --key '{\"pk\":{\"S\":\"{resource_type}#{resource_id}\"}}' --query 'Item.data.S' --output text"
-state_write:
-  command: "aws dynamodb put-item --table-name tanebi --item '{\"pk\":{\"S\":\"{resource_type}#{resource_id}\"},\"data\":{\"S\":\"'$(cat)'\"}}}'"
+event_type: decompose.requested
+payload:
+  cmd_id: string              # コマンドID（例: cmd_001）
+  request_path: string        # work/cmd_NNN/request.md
+  persona_list: string        # カンマ区切りのPersona ID一覧
+  plan_output_path: string    # work/cmd_NNN/plan.md
+  timestamp: string           # ISO8601
 ```
 
-旧設計ではStateStoreのバックエンド切り替えに「StateStore Adapter」「3層ストレージ戦略」「Write-Through/Write-Behind」等の複雑な設計が必要だった。コマンド設定モデルではconfig.yamlのコマンドを変えるだけ。**TANEBIコアには何の変更も不要。**
+**Executor の責務**:
+- `request_path` のファイルを読んでサブタスクに分解する
+- 分解計画を `plan_output_path` に書き出す
+- `task.decomposed` イベントを発行する
 
-### 7.3 高度なパターン
-
-#### Write-Through（コマンドチェーン）
-
-ローカルキャッシュ + S3永続化を同時に行う場合:
+#### execute.requested
 
 ```yaml
-state_write:
-  command: "tee {resource_path} | aws s3 cp - s3://tanebi-data/{resource_type}/{resource_id}"
+event_type: execute.requested
+payload:
+  cmd_id: string
+  subtask_id: string
+  subtask_file: string        # work/cmd_NNN/plan_subtasks/subtask_NNN.md
+  persona_file: string        # personas/active/{id}.yaml
+  output_path: string         # work/cmd_NNN/results/subtask_NNN.md
+  wave: integer               # Wave番号（並列グループ）
+  timestamp: string
 ```
 
-1つのコマンドで「ローカル書き込み」と「S3アップロード」を同時実行。`tee`のパイプ。
+**Executor の責務**:
+- `persona_file` を読んで Persona 情報を取得する
+- `subtask_file` を読んでサブタスクを実行する
+- 結果を `output_path` に書き出す（YAML frontmatter 付き Markdown）
+- `worker.completed` イベントを発行する
 
-#### Persona排他制御
+#### aggregate.requested
 
 ```yaml
-state_write:
-  command: "flock /tmp/tanebi_{resource_type}_{resource_id}.lock tee {resource_path} > /dev/null"
+event_type: aggregate.requested
+payload:
+  cmd_id: string
+  results_dir: string         # work/cmd_NNN/results/
+  report_path: string         # work/cmd_NNN/report.md
+  timestamp: string
 ```
 
-`flock`による排他制御もコマンドレベルで解決。
+**Executor の責務**:
+- `results_dir` 配下の全 ResultYAML を読んで集約する
+- 集約レポートを `report_path` に書き出す
+- `task.aggregated` イベントを発行する
 
-### 7.4 Persona Manager パターン（Lambda環境）
+### 6.2 Executor → Core（完了イベント）
 
-エフェメラル環境でのPersona排他更新は、オーケストレーター側に集約する設計を推奨。
+#### task.decomposed
 
+```yaml
+event_type: task.decomposed
+payload:
+  cmd_id: string
+  plan:
+    subtasks:
+      - id: string             # subtask_001 など
+        description: string
+        persona: string        # Persona ID
+        wave: integer
+    waves: integer
+    persona_assignments:
+      - subtask_id: string
+        persona_id: string
 ```
-Orchestrator (常駐 — ECS / EC2 / ローカル)
-  └── Persona Manager (single writer)
-      ├── state_read: "aws s3 cp s3://tanebi-data/persona/{persona_id} -"
-      ├── state_write: "aws s3 cp - s3://tanebi-data/persona/{persona_id}"
-      └── evolve.sh → state_read → update → state_write の排他実行
 
-Worker (Lambda — stateless)
-  └── Persona は read-only で参照（invoke payload埋め込み or pre-signed URL）
+#### worker.completed
+
+```yaml
+event_type: worker.completed
+payload:
+  cmd_id: string
+  subtask_id: string
+  status: enum[success, failure]
+  quality: enum[GREEN, YELLOW, RED]
+  domain: string               # backend / frontend / testing / docs 等
+```
+
+#### worker.started（任意）
+
+```yaml
+event_type: worker.started
+payload:
+  cmd_id: string
+  subtask_id: string
+  persona_id: string
+  wave: integer
+```
+
+Worker 起動時に発行すると、progress プラグインがリアルタイム進捗を表示できる。
+
+#### worker.progress（任意）
+
+```yaml
+event_type: worker.progress
+payload:
+  cmd_id: string
+  subtask_id: string
+  message: string
+  percent: integer?            # 0-100（オプション）
+```
+
+#### task.aggregated
+
+```yaml
+event_type: task.aggregated
+payload:
+  cmd_id: string
+  report_path: string
+  quality_summary:
+    GREEN: integer
+    YELLOW: integer
+    RED: integer
+```
+
+### 6.3 エラーイベント
+
+Worker が失敗した場合は 2 つのイベントを発行する:
+
+```bash
+# error.worker_failed（プラグイン通知用）
+bash scripts/emit_event.sh "work/cmd_001" "error.worker_failed" "
+cmd_id: cmd_001
+subtask_id: subtask_001
+error_detail: 'claude -p exited with code 1: timeout'
+"
+
+# worker.completed（フロー継続のため status: failure で発行）
+bash scripts/emit_event.sh "work/cmd_001" "worker.completed" "
+cmd_id: cmd_001
+subtask_id: subtask_001
+status: failure
+quality: RED
+domain: backend
+"
+```
+
+### 6.4 events/schema.yaml への参照
+
+```bash
+# 全イベントスキーマを確認
+cat events/schema.yaml
+
+# 特定のイベントスキーマを確認（python3 + PyYAML）
+python3 -c "
+import yaml
+with open('events/schema.yaml') as f:
+    schema = yaml.safe_load(f)
+print(yaml.dump(schema['events'].get('execute.requested', {})))
+"
 ```
 
 ---
 
-## 8. 現実装ギャップ分析（コマンド設定モデル観点）
+## 7. トラブルシューティング
 
-旧ポリシーのV-001〜V-005を、コマンド設定モデルの観点で再評価する。
+### 7.1 よくあるエラーと対処法
 
-### 解消される問題
+#### Worker が Event Store に書き込まない
 
-| 旧問題 | 旧深刻度 | コマンドモデルでの状況 |
-|--------|---------|---------------------|
-| **V-001: CLAUDE.mdのclaude-native固定** | Critical | **解消** — claude-nativeは `builtin:task_tool` としてconfig.yamlに明示。CLAUDE.mdの分離は不要（CLAUDE.md自体がclaude-native構成時のオーケストレーター） |
-| **V-003: Wave並列のTask tool固定** | High | **解消** — execute_wave.commandで並列方式を構成側が決定 |
-| **V-004: emit_event.sh密結合** | High | **解消** — event_emit.commandで任意のtransportを指定可能 |
-| 旧adapter_setのcase文分岐 | — | **消滅** — case文自体が不要に |
-| port_mapping.yamlの管理コスト | — | **消滅** — config.yamlに全て集約 |
+**症状**: `*.requested` イベントが発行されても、Core が `*.completed` を受け取れない。
 
-### 残存する問題
+**確認手順**:
+```bash
+# Event Store の内容を確認
+ls -la work/cmd_001/events/
 
-| 問題 | 深刻度 | 内容 | 対策 |
-|------|--------|------|------|
-| **V-002: TANEBI_ROOTオーバーライド不可** | High | `scripts/tanebi_config.sh`の8行目。Docker等でパス注入できない | FIX-001: `TANEBI_ROOT="${TANEBI_ROOT:-$(computed)}"` パターン採用。1行変更 |
-| **V-005: handler.sh内ファイル直接I/O** | Medium | 3プラグインがstate Portを経由せずファイル直接読み書き | 段階的修正: state_read/state_writeコマンドを利用するヘルパー関数に置換 |
-| **command_executor未実装** | New | §3.3で設計したコマンド実行エンジンがまだ存在しない | Phase 3.5で新規実装 |
-| **config.yaml Port構造未実装** | New | 現config.yamlにportsセクションが存在しない | Phase 3.5で追加 |
-| **builtin:task_tool未実装** | New | claude-native用のbuiltin呼び出しメカニズムが未実装 | Phase 3.5で実装 |
+# 最新イベントを確認
+cat work/cmd_001/events/$(ls work/cmd_001/events/ | tail -1)
+```
 
-### ポリシー適合済み（変更不要）
+**対処**: Executor 内で `bash scripts/emit_event.sh` を呼び出しているか確認する。
 
-| コンポーネント | 適合状況 | 備考 |
-|--------------|---------|------|
-| **Persona YAMLスキーマ** | 完全適合 | データ定義。環境非依存 |
-| **events/schema.yaml** | 完全適合 | イベントスキーマ。コア定義 |
-| **evolve.sh** | 高適合 | state_read/state_writeコマンド経由に改修すれば完全適合 |
-| **Trust Module** | 高適合 | security_check/updateコマンドとして自然に表現 |
-| **subprocess adapter** | 高適合 | config.yamlにコマンドとして記述するだけ |
+#### Worker が途中で止まる（タイムアウト）
 
----
+**原因**: `claude -p` のターン数上限または時間制限に達した。
 
-## 9. 改修ロードマップ
-
-### Phase 3.5（コマンド設定モデル基盤構築）
-
-| 改修ID | 内容 | 工数見積 |
-|--------|------|---------|
-| **CMD-001** | `scripts/command_executor.sh` 新規作成 — §3.3のコマンド実行エンジン | 2日 |
-| **CMD-002** | config.yaml に `tanebi.ports` セクション追加。claude-native構成をデフォルトで記述 | 1日 |
-| **CMD-003** | `builtin:task_tool` メカニズム実装 — CLAUDE.mdオーケストレーターとの統合 | 2日 |
-| **CMD-004** | 既存オーケストレーター（CLAUDE.md）をcommand_executor経由の呼び出しに段階的移行 | 3日 |
-| **FIX-001** | V-002修正 — `TANEBI_ROOT` オーバーライド対応（1行変更） | 0.5日 |
-| **FIX-003** | V-005部分修正 — plugin_helpers.shにstate_read/state_write wrapper追加 | 1日 |
-
-**Phase 3.5 合計工数: 9.5日**
-
-### Phase 4（Docker構成のconfig.yaml作成 + 検証）
-
-| 項目 | 内容 | 工数見積 |
-|------|------|---------|
-| Docker config.yaml | §5.2のプロファイルを作成・検証 | 1日 |
-| Dockerイメージ作成 | `tanebi-worker:latest` ビルド | 1日 |
-| orchestrator.sh（command_executor利用版） | command_executorを呼ぶだけのシンプルなシェル | 1日 |
-| E2Eテスト | Docker構成でのfull flow | 2日 |
-
-**Phase 4 合計工数: 5日**（旧設計の8-9日から大幅短縮 — adapter固有コードが減るため）
-
-### Phase 5（Lambda構成のconfig.yaml作成 + 検証）
-
-| 項目 | 内容 | 工数見積 |
-|------|------|---------|
-| Lambda config.yaml | §5.3のプロファイルを作成 | 1日 |
-| Lambda handler.py | Worker/Decomposer/Aggregator | 3日 |
-| Step Functions定義 | execute_wave用 | 2日 |
-| E2Eテスト | Lambda構成でのfull flow | 3日 |
-
-**Phase 5 合計工数: 9日**（旧設計の15-20日から大幅短縮）
-
----
-
-## 10. Hello World Adapter（コマンドモデル版）
-
-### Step 1: config.yamlにコマンドを書く
-
+**対処**:
 ```yaml
-# config.yaml — Hello World構成
+# config.yaml
 tanebi:
-  ports:
-    worker_launch:
-      decompose:
-        command: "echo 'plan:\\n  cmd: {cmd_id}\\n  total_subtasks: 1\\n  waves: 1\\n  subtasks:\\n    - id: subtask_001\\n      description: Process request\\n      persona: generalist_v1\\n      wave: 1' > {plan_output}"
-        timeout: 10
-      execute:
-        command: "echo '---\\nsubtask_id: {subtask_id}\\npersona: generalist_v1\\nstatus: success\\nquality: GREEN\\n---\\nHello from TANEBI!' > {output_path}"
-        timeout: 10
-
-    event_emit:
-      command: "echo '[EVENT] {event_type}: {payload}'"
-
-    state_read:
-      command: "cat {resource_path} 2>/dev/null || echo ''"
-    state_write:
-      command: "tee {resource_path} > /dev/null"
-
-    security_check:
-      command: "exit 0"   # 常にallow
+  execution:
+    worker_max_turns: 50     # ターン上限を増やす
 ```
 
-**これだけ。** adapter専用ディレクトリも、orchestrator.shも、port_mapping.yamlも不要。config.yamlにコマンドを書くだけで新しい「アダプター」が完成する。
-
-### Step 2: 実行
+または `subprocess_worker.sh` の `claude -p` コマンドに `--max-turns` を追加する:
 
 ```bash
-bash scripts/command_executor.sh worker_launch.execute \
-  cmd_id=cmd_test subtask_id=subtask_001 \
-  output_path=work/cmd_test/results/subtask_001.md
+# subprocess_worker.sh の claude -p 呼び出し箇所を修正
+claude -p \
+  --max-turns 50 \
+  --system-prompt "$SYSTEM_PROMPT" \
+  ...
 ```
 
-### Step 3: 結果確認
+#### Docker 環境で Persona 更新が失われる
+
+**症状**: Worker 完了後、Persona の trust_score 等が更新されない。
+
+**原因**: `personas/` ディレクトリがコンテナ内に閉じており、ホストにマウントされていない。
+
+**対処**:
+```bash
+# ホストの personas/ をマウントすること
+docker run -v "$(pwd)/personas:/app/personas" tanebi-worker:latest ...
+```
+
+#### Lambda で Persona 更新が競合する
+
+**症状**: 複数の Lambda が同時に同じ Persona を更新しようとして不整合が起きる。
+
+**対処**: Persona 更新はオーケストレーター（常駐プロセス）に集約する。Lambda は Persona を read-only で参照し、更新は SQS 等でオーケストレーターに委譲する（Section 5.3 参照）。
+
+#### emit_event.sh でイベントが重複する
+
+**症状**: 同じイベントが複数回発行される。
+
+**原因**: Executor が失敗後に再試行する際、前回のイベントが残っている。
+
+**対処**: Event Store の連番管理により自然に重複は別イベントとして蓄積される。Core は
+イベント ID で冪等性を保証する。Executor 側での重複防止は不要。
+
+#### subprocess_worker.sh が "nested claude" エラーで失敗する
+
+**症状**:
+```
+Error: Cannot run claude in subprocess mode when already running claude
+```
+
+**原因**: `CLAUDECODE` または `CLAUDE_CODE_ENTRYPOINT` が設定されたまま。
+
+**対処**: `subprocess_worker.sh` が自動で unset するが、外部からの呼び出しで環境変数が
+渡される場合は明示的に unset する:
 
 ```bash
-cat work/cmd_test/results/subtask_001.md
-# ---
-# subtask_id: subtask_001
-# persona: generalist_v1
-# status: success
-# quality: GREEN
-# ---
-# Hello from TANEBI!
+unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT
+bash scripts/subprocess_worker.sh execute ...
 ```
 
-### 旧設計との比較
+### 7.2 デバッグ手法
 
-| 項目 | 旧設計 | 新設計（コマンドモデル） |
-|------|---------------------|----------------------|
-| 必要なファイル | `adapters/hello-world/orchestrator.sh` + `port_mapping.yaml` + config.yaml変更 | **config.yamlのみ** |
-| コード行数 | orchestrator.sh 60行 + port_mapping.yaml 15行 | **config.yaml 20行** |
-| TANEBIコア変更 | case文に`hello-world)`を追加 | **なし** |
+#### Event Store の状態確認
+
+```bash
+# 特定コマンドの全イベントを一覧表示
+ls -la work/cmd_001/events/
+
+# イベント内容を全て確認
+for f in work/cmd_001/events/*.yaml; do
+  echo "=== $(basename $f) ==="
+  cat "$f"
+  echo
+done
+```
+
+#### Executor の動作ログ確認
+
+subprocess_worker.sh の標準出力/エラーを確認:
+
+```bash
+bash scripts/subprocess_worker.sh execute \
+  work/cmd_001/plan_subtasks/subtask_001.md \
+  work/cmd_001/results/subtask_001.md 2>&1 | tee /tmp/executor.log
+
+cat /tmp/executor.log
+```
+
+#### イベントを手動で発行（テスト）
+
+```bash
+# テスト用に execute.requested を手動発行
+bash scripts/emit_event.sh "work/cmd_001" "execute.requested" "
+cmd_id: cmd_001
+subtask_id: subtask_001
+subtask_file: work/cmd_001/plan_subtasks/subtask_001.md
+persona_file: personas/active/generalist_v1.yaml
+output_path: work/cmd_001/results/subtask_001.md
+wave: 1
+"
+```
+
+#### component_loader のイベント配信確認
+
+```bash
+# component_loader に dispatch を直接呼ぶ（プラグインへの配信を確認）
+bash scripts/component_loader.sh dispatch worker.completed \
+  work/cmd_001/events/006_worker.completed.yaml
+```
+
+### 7.3 実装チェックリスト
+
+独自 Executor を実装する際の確認リスト:
+
+- [ ] `*.requested` イベントを Event Store から読み取れるか
+- [ ] 処理完了後に `*.completed` イベントを `emit_event.sh` で発行しているか
+- [ ] `worker.completed` ペイロードに `status`・`quality`・`domain` が含まれているか
+- [ ] 成果物（plan.md / results/*.md / report.md）がイベントで指定されたパスに書き出されているか
+- [ ] Worker 失敗時に `error.worker_failed` と `worker.completed (status: failure)` の両方を発行しているか
+- [ ] Event Store（`work/`）がホスト・コンテナ・クラウド間で共有されているか
+- [ ] Persona ファイルの並列更新が競合しないよう制御されているか
+- [ ] Worker 起動時に `CLAUDECODE` / `CLAUDE_CODE_ENTRYPOINT` を unset しているか（subprocess の場合）
+
+### 7.4 ログ確認コマンド集
+
+```bash
+# 特定コマンドのイベント数を確認
+ls work/cmd_001/events/ | wc -l
+
+# *.requested イベントのみ確認
+ls work/cmd_001/events/ | grep "requested"
+
+# *.completed イベントのみ確認
+ls work/cmd_001/events/ | grep "completed"
+
+# 最後のイベントを確認（フロー状態の把握）
+cat work/cmd_001/events/$(ls work/cmd_001/events/ | sort | tail -1)
+
+# 全コマンドの状況を一覧（work/ 配下に events/ がある場合）
+for d in work/cmd_*/; do
+  cmd_id=$(basename "$d")
+  event_count=$(ls "$d/events/" 2>/dev/null | wc -l)
+  last_event=$(ls "$d/events/" 2>/dev/null | sort | tail -1 | sed 's/\.yaml//')
+  echo "$cmd_id: $event_count events, last: $last_event"
+done
+```
 
 ---
 
-## 11. エラーハンドリング
-
-### 11.1 コマンド実行エラー
-
-command_executorが処理するエラーパターン:
-
-| 状況 | 検知方法 | 対応 |
-|------|---------|------|
-| コマンド未設定 | `command` フィールド空 | エラー終了。「Port {name} にcommandが設定されていません」 |
-| プレースホルダー未解決 | `{xxx}` パターン残存 | エラー終了。「未解決プレースホルダー: {xxx}」 |
-| コマンド実行失敗 | exit code 非0 | Port種別に応じた処理（§3.7参照） |
-| タイムアウト | timeout超過 | プロセス強制終了。結果を `status: failure` に設定 |
-| builtin未知 | `builtin:unknown_name` | エラー終了。「Unknown builtin: unknown_name」 |
-
-### 11.2 設定バリデーション
-
-TANEBIコア起動時に以下を検証:
-
-```yaml
-validation:
-  required_ports:
-    - worker_launch.decompose.command   # フロー実行に必須
-    - worker_launch.execute.command     # フロー実行に必須
-    - state_write.command               # 結果保存に必須
-  optional_ports:
-    - worker_launch.execute_wave.command  # 省略時: execute.commandの並列呼び出し
-    - event_emit.command                  # 省略時: イベント発火なし（プラグイン無効）
-    - state_read.command                  # 省略時: ファイル直接読み取り
-    - knowledge_read.command              # 省略時: ローカルファイル参照
-    - security_check.command              # 省略時: 常にallow
-    - security_update.command             # 省略時: no-op
-  validation_steps:
-    - 全required_portのcommandが非空であること
-    - 全commandのプレースホルダーが既知のものであること（タイポ検出）
-    - timeout値が正の整数であること
-    - builtin:XXX のXXX が既知のbuiltinであること
-```
-
-### 11.3 デバッグ支援
-
-```bash
-# コマンドのドライラン（実行せず置換結果を表示）
-bash scripts/command_executor.sh --dry-run worker_launch.execute \
-  cmd_id=cmd_001 subtask_id=subtask_001 persona_file=personas/active/gen_v1.yaml \
-  output_path=work/cmd_001/results/subtask_001.md
-
-# 出力例:
-# [TANEBI] Dry run for port: worker_launch.execute
-# [TANEBI] Command: docker run --rm --network tanebi-net -v work:/app/work ...
-# [TANEBI] Timeout: 600s
-```
-
----
-
-## 12. docs/design.md 反映計画
-
-本ポリシーの内容をdocs/design.mdに反映するための計画。
-
-### 追加が必要なセクション
-
-| 追加位置 | 内容 |
-|---------|------|
-| **Section 1.3（設計原則）** | AP-1〜AP-5（コマンド設定モデル版）を記載 |
-| **Section 8（アダプターインターフェース）全面改訂** | IF-001〜005を廃止。コマンド設定モデルのPort定義に置換 |
-| **Section 8 新設 "config.yaml Port構造"** | §3.1の構造定義 |
-| **Section 8 新設 "プレースホルダー規約"** | §3.2の全プレースホルダー表 |
-| **Section 8 新設 "builtin:task_tool"** | §4の設計と根拠 |
-
-### 削除が必要な概念
-
-| 概念 | 理由 |
-|------|------|
-| `adapter_set` | コマンド設定モデルでは不要 |
-| `case "$adapter_set"` 分岐 | 消滅 |
-| `adapters/{adapter_name}/port_mapping.yaml` | config.yamlに統合 |
-| IF-001〜IF-005（名前付きインターフェース） | Port command定義に置換 |
-
----
-
-*End of Policy Document (Command Configuration Model)*
+*End of Executor Implementation Guide*
