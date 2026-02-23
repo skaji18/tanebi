@@ -165,3 +165,74 @@ def emit_feedback(
         return fb_path
 
     raise RuntimeError("フィードバックSEQ採番に100回失敗")
+
+
+def next_task_id(work_dir: Path) -> str:
+    """
+    work_dir 内の cmd_NNN ディレクトリを走査して次のIDを返す。
+    例: work/cmd_001 が存在すれば "cmd_002" を返す。
+    存在しなければ "cmd_001" を返す。
+    """
+    work_dir = Path(work_dir)
+    max_n = 0
+    if work_dir.exists():
+        for entry in work_dir.iterdir():
+            if entry.is_dir() and entry.name.startswith("cmd_"):
+                try:
+                    n = int(entry.name[4:])
+                    max_n = max(max_n, n)
+                except ValueError:
+                    pass
+    return f"cmd_{max_n + 1:03d}"
+
+
+def create_task(work_dir: Path, task_id: str, request: str) -> Path:
+    """
+    work_dir / task_id ディレクトリをアトミックに作成する。
+    既存なら FileExistsError を送出。
+    request.md と events/ ディレクトリを作成し、task.created イベントを発火する。
+    戻り値: cmd_dir (work_dir / task_id の Path)
+    """
+    work_dir = Path(work_dir)
+    cmd_dir = work_dir / task_id
+    os.mkdir(str(cmd_dir))  # atomic: raises FileExistsError if already exists
+    (cmd_dir / "request.md").write_text(request, encoding="utf-8")
+    (cmd_dir / "events").mkdir()
+    emit_event(cmd_dir, "task.created", {"cmd_id": task_id}, validate=False)
+    return cmd_dir
+
+
+def list_events(cmd_dir: Path) -> list[dict]:
+    """
+    cmd_dir / events / *.yaml を SEQ 昇順で読み、dict のリストで返す。
+    events/ が存在しない or 空のときは [] を返す。
+    .claimed ファイルはスキップ（*.yaml のみ対象）。
+    """
+    cmd_dir = Path(cmd_dir)
+    events_dir = cmd_dir / "events"
+    if not events_dir.exists():
+        return []
+    files = sorted(events_dir.glob("*.yaml"))
+    result = []
+    for f in files:
+        data = yaml.safe_load(f.read_text(encoding="utf-8"))
+        if data is not None:
+            result.append(data)
+    return result
+
+
+def get_task_summary(cmd_dir: Path) -> dict:
+    """
+    list_events を呼んでイベントログを取得し、タスクサマリーを返す。
+    """
+    cmd_dir = Path(cmd_dir)
+    events = list_events(cmd_dir)
+    event_types = [e.get("event_type", "") for e in events]
+    last_event = event_types[-1] if event_types else None
+    return {
+        "task_id": cmd_dir.name,
+        "state": last_event if last_event is not None else "unknown",
+        "event_count": len(events),
+        "last_event": last_event,
+        "events": event_types,
+    }

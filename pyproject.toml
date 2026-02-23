@@ -9,6 +9,7 @@ description = "Task-Native Evolution Boost Infrastructure"
 requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
+    "watchdog>=4.0",
 ]
 
 [project.optional-dependencies]

@@ -47,6 +47,8 @@ tanebi:
     max_parallel_workers: 5
     worker_max_turns: 30
     default_model: "claude-sonnet-4-6"
+    claude_native: true
+    timeout: 300
 
   # === 進化エンジン設定 ===
   evolution:
