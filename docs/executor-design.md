@@ -638,7 +638,7 @@ claude
 
 | ファイル | 変更内容 |
 |---------|---------|
-| `src/tanebi/core/event_store.py` | list_events / get_task_summary 追加 |
+| `src/tanebi/event_store/__init__.py` | list_events / get_task_summary 追加 |
 | `src/tanebi/cli/main.py` | `tanebi listener` / `tanebi new` サブコマンド追加 |
 | `config.yaml` | `execution.claude_native` フィールド追加 |
 

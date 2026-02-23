@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from tanebi.core.event_store import next_task_id, create_task, list_events, get_task_summary
+from tanebi.event_store import next_task_id, create_task, list_events, get_task_summary
 
 
 def submit(request: str, *, project_dir: Path | None = None) -> str:

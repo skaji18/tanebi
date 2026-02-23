@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tanebi.core.event_store import emit_event
+from tanebi.event_store import emit_event
 from tanebi.core.flow import (
     determine_state,
     on_checkpoint_completed,

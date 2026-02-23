@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from tanebi.core.event_store import list_events
+from tanebi.event_store import list_events
 
 __all__ = [
     "QUALITY_MAP",

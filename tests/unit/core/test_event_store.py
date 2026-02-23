@@ -1,9 +1,9 @@
-"""tanebi.core.event_store のユニットテスト"""
+"""tanebi.event_store のユニットテスト"""
 import pytest
 import yaml
 from pathlib import Path
 
-from tanebi.core.event_store import (
+from tanebi.event_store import (
     emit_event,
     emit_feedback,
     validate_payload,

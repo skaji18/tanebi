@@ -25,6 +25,12 @@ tanebi persona list
 tanebi evolve <task_id> <persona_id>
 ```
 
+### Event直接発火（デバッグ・上級者向け）
+```bash
+tanebi emit <task_id> <event_type> [key=value ...]
+```
+Executor向けAPIとしてeventを直接発火できる。
+
 ## フロー
 Listener が decompose → execute → aggregate を自動処理する。
 Claude Code の介入は不要。タスク完了後に status で結果を確認せよ。

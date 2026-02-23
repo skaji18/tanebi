@@ -17,7 +17,7 @@ from typing import Optional
 
 import yaml
 
-from tanebi.core.event_store import get_task_summary, list_events
+from tanebi.event_store import get_task_summary, list_events
 from tanebi.core.fitness import collect_checkpoint_attributions, update_persona_fitness
 from tanebi.core.persona_ops import snapshot_persona
 

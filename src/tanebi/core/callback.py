@@ -6,7 +6,7 @@ tanebi-callback.sh の処理を Python で置換する。
 from pathlib import Path
 from typing import Optional
 
-from tanebi.core.event_store import emit_event
+from tanebi.event_store import emit_event
 
 __all__ = ["handle_callback", "resolve_cmd_dir", "parse_callback_args"]
 

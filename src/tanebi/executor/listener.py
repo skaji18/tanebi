@@ -68,7 +68,7 @@ class ExecutorListener:
 
     def _dispatch(self, task_id: str, event_type: str, payload: dict) -> None:
         from tanebi.executor.worker import run_claude_p  # noqa: F401
-        from tanebi.core.event_store import emit_event  # noqa: F401
+        from tanebi.event_store import emit_event  # noqa: F401
         cmd_dir = self.tanebi_root / "work" / task_id
         if event_type == "decompose.requested":
             self._run_decompose(cmd_dir, payload)
@@ -80,7 +80,7 @@ class ExecutorListener:
     def _run_decompose(self, cmd_dir: Path, payload: dict) -> None:
         """分解処理 — stub実装（実際の claude -p 呼び出し）"""
         from tanebi.executor.worker import run_claude_p, read_template, WorkerError
-        from tanebi.core.event_store import emit_event
+        from tanebi.event_store import emit_event
         try:
             try:
                 system = read_template("decomposer.md")
@@ -96,7 +96,7 @@ class ExecutorListener:
     def _run_execute(self, cmd_dir: Path, payload: dict) -> None:
         """実行処理 — stub実装"""
         from tanebi.executor.worker import run_claude_p, read_template, WorkerError
-        from tanebi.core.event_store import emit_event
+        from tanebi.event_store import emit_event
         try:
             subtask_type = payload.get("subtask_type", "normal")
             try:
@@ -138,7 +138,7 @@ class ExecutorListener:
     def _run_aggregate(self, cmd_dir: Path, payload: dict) -> None:
         """統合処理 — stub実装"""
         from tanebi.executor.worker import run_claude_p, read_template, WorkerError
-        from tanebi.core.event_store import emit_event
+        from tanebi.event_store import emit_event
         try:
             try:
                 system = read_template("aggregator.md")

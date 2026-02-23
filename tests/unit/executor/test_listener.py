@@ -155,7 +155,7 @@ def test_run_execute_worker_error_emits_failed_event(tmp_path):
     payload = {"subtask_id": "sub_001", "wave": 1}
 
     with patch("tanebi.executor.worker.run_claude_p", side_effect=WorkerError("test error")), \
-         patch("tanebi.core.event_store.emit_event") as mock_emit:
+         patch("tanebi.event_store.emit_event") as mock_emit:
         # 例外が伝播しないことを確認
         lst._run_execute(cmd_dir, payload)
 
@@ -169,7 +169,7 @@ def test_run_execute_worker_error_emits_failed_event(tmp_path):
 
 def test_emit_event_thread_safe_no_duplicate_seq(tmp_path):
     """複数スレッドから emit_event を並列呼び出しても SEQ が重複しない"""
-    from tanebi.core.event_store import emit_event
+    from tanebi.event_store import emit_event
 
     cmd_dir = tmp_path / "work" / "task_001"
     n_threads = 10

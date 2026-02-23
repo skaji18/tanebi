@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from tanebi import api
-from tanebi.core.event_store import emit_event, list_events
+from tanebi.event_store import emit_event, list_events
 from tanebi.core.listener import CoreListener
 
 

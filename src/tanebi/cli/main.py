@@ -4,6 +4,7 @@ import sys
 from tanebi.cli.listener_cmd import add_listener_parser, add_new_parser
 from tanebi.cli.persona_cmd import add_persona_parser
 from tanebi.cli.evolve_cmd import add_evolve_parser
+from tanebi.cli.emit_cmd import add_emit_parser
 
 
 def main() -> None:
@@ -17,6 +18,7 @@ def main() -> None:
     add_new_parser(subparsers)
     add_persona_parser(subparsers)
     add_evolve_parser(subparsers)
+    add_emit_parser(subparsers)
 
     # status [<task_id>]
     status_p = subparsers.add_parser("status", help="Show task status")
@@ -36,7 +38,7 @@ def main() -> None:
 
 def _status(args: argparse.Namespace) -> None:
     from pathlib import Path
-    from tanebi.core.event_store import get_task_summary
+    from tanebi.event_store import get_task_summary
     from tanebi.core.config import WORK_DIR
 
     work_dir = Path(WORK_DIR)

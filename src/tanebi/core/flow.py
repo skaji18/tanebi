@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from tanebi.core.event_store import emit_event, list_events
+from tanebi.event_store import emit_event, list_events
 
 
 # ---------------------------------------------------------------------------
