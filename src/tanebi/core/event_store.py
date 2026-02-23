@@ -40,7 +40,7 @@ def validate_payload(event_type: str, payload: dict, schema: dict) -> None:
             continue
         if field_name not in payload:
             raise ValueError(
-                f"イベント '{event_type}' の必須フィールド '{field_name}' が不足しています"
+                f"Event '{event_type}' is missing required field '{field_name}'"
             )
 
 
@@ -109,7 +109,7 @@ def emit_event(
 
         return event_path
 
-    raise RuntimeError(f"SEQ採番に100回失敗: {event_type}")
+    raise RuntimeError(f"SEQ numbering failed after 100 retries: {event_type}")
 
 
 def emit_feedback(
@@ -164,7 +164,7 @@ def emit_feedback(
 
         return fb_path
 
-    raise RuntimeError("フィードバックSEQ採番に100回失敗")
+    raise RuntimeError("Feedback SEQ numbering failed after 100 retries")
 
 
 def next_task_id(work_dir: Path) -> str:

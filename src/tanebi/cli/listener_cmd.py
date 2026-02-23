@@ -58,16 +58,16 @@ class EventRouter:
 
 def add_listener_parser(subparsers: argparse._SubParsersAction) -> None:
     """tanebi listener <subcommand>"""
-    listener_parser = subparsers.add_parser("listener", help="Listener 管理")
+    listener_parser = subparsers.add_parser("listener", help="Manage listener")
     listener_sub = listener_parser.add_subparsers(dest="listener_cmd")
-    start_p = listener_sub.add_parser("start", help="Listener を起動する")
+    start_p = listener_sub.add_parser("start", help="Start the listener")
     start_p.set_defaults(func=_listener_start)
 
 
 def add_new_parser(subparsers: argparse._SubParsersAction) -> None:
     """tanebi new <request>"""
-    new_p = subparsers.add_parser("new", help="新しいタスクを投入する")
-    new_p.add_argument("request", nargs="+", help="タスク依頼テキスト")
+    new_p = subparsers.add_parser("new", help="Submit a new task")
+    new_p.add_argument("request", nargs="+", help="Task request text")
     new_p.set_defaults(func=_new_task)
 
 

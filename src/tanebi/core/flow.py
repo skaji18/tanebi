@@ -95,7 +95,7 @@ def _parse_plan(cmd_dir: Path, payload: dict) -> list[dict]:
     if plan is None:
         plan_path = cmd_dir / "plan.md"
         if not plan_path.exists():
-            raise RuntimeError(f"plan.md が存在しません: {plan_path}")
+            raise RuntimeError(f"plan.md not found: {plan_path}")
         content = plan_path.read_text(encoding="utf-8")
         # 最小限パース: YAMLブロックを試みる
         try:

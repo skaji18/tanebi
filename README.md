@@ -50,8 +50,8 @@ graph LR
         EL[(Immutable event log)]
     end
     subgraph EX ["Executor"]
-        CMD[command_executor.sh]
-        WRK[subprocess_worker.sh]
+        CMD[command_executor.py]
+        WRK[subprocess_worker.py]
     end
     O -- "*.requested" --> EL
     EL -- "*.requested" --> CMD
@@ -118,13 +118,12 @@ Agents that perform well get more tasks in their domain. Agents that struggle re
 ## Documentation
 
 - **[Design Document](docs/design.md)** -- Full architecture specification, Persona schema, Evolution Engine details, Store abstractions, and event-driven architecture
-- **[Executor Guide](docs/adapter-guide.md)** -- Executor environment implementation guide (Event Store schema compliant)
-- **[Implementation Roadmap](docs/roadmap.md)** -- Python migration roadmap with phased plan
+- **[Executor Design](docs/executor-design.md)** -- Executor implementation guide
 
 ### 読者別ガイド
 - **TANEBIを使う方**: このREADME → `bash scripts/setup.sh` → docs/design.md
-- **Executorを実装する方**: docs/adapter-guide.md
-- **TANEBIコアに貢献する方**: docs/design.md + docs/roadmap.md
+- **Executorを実装する方**: docs/executor-design.md
+- **TANEBIコアに貢献する方**: docs/design.md
 
 ## License
 

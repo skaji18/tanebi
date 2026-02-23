@@ -79,5 +79,4 @@ Event Store (work/{cmd}/events/)   ←→   Executor (subprocess_worker)
 ## Next Steps
 
 - **[design.md](design.md)** — アーキテクチャ全仕様、Persona スキーマ、Evolution Engine
-- **[roadmap.md](roadmap.md)** — 実装フェーズと今後の計画
-- **[adapter-guide.md](adapter-guide.md)** — 独自 Executor の実装方法
+- **[executor-design.md](executor-design.md)** — 独自 Executor の実装方法

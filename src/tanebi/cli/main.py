@@ -17,12 +17,12 @@ def main() -> None:
     add_persona_parser(subparsers)
 
     # status [<task_id>]
-    status_p = subparsers.add_parser("status", help="タスクステータスを表示する")
-    status_p.add_argument("task_id", nargs="?", help="タスクID（省略時は全タスク）")
+    status_p = subparsers.add_parser("status", help="Show task status")
+    status_p.add_argument("task_id", nargs="?", help="Task ID (defaults to all tasks)")
     status_p.set_defaults(func=_status)
 
     # config
-    config_p = subparsers.add_parser("config", help="現在の設定を表示する")
+    config_p = subparsers.add_parser("config", help="Show current config")
     config_p.set_defaults(func=_config)
 
     args = parser.parse_args()

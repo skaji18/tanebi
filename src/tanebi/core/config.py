@@ -6,6 +6,7 @@ from pathlib import Path
 
 __all__ = [
     "load_config",
+    "validate_config",
     "get_path",
     "TANEBI_ROOT",
     "PERSONA_DIR",
@@ -41,7 +42,19 @@ def load_config(tanebi_root=None):
                     key = m.group(1).strip()
                     val = m.group(2).strip().strip('"').strip("'")
                     config[key] = val
+    validate_config(config)
     return config
+
+
+def validate_config(config: dict) -> None:
+    """Validate that required fields are present in the config dict.
+
+    Raises:
+        ValueError: If a required field is missing or empty.
+    """
+    for field in ("work_dir", "persona_dir"):
+        if not config.get(field):
+            raise ValueError(f"Missing required config field: {field}")
 
 
 def get_path(key, default=None, tanebi_root=None):

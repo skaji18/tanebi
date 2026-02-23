@@ -4,34 +4,6 @@
 tanebi:
   version: "1.0"
 
-  # === モジュール・プラグイン設定 ===
-  plugins:
-    preset: "standard"         # minimal | standard | full | custom
-
-    # custom時の個別設定
-    trust:
-      enabled: true
-    progress:
-      enabled: true
-    approval:
-      enabled: true
-      plan_review: true
-      wave_gate: false
-      timeout_seconds: null
-      danger_op_confirm: true
-    cost:
-      enabled: true
-      budget: null
-      show_per_subtask: true
-      show_cumulative: true
-    evolution:
-      enabled: true
-      show_on_complete: true
-      verbose: false
-    history:
-      enabled: false
-      auto_index: true
-
   # === パス設定 ===
   paths:
     work_dir: "work"
