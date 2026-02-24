@@ -88,23 +88,23 @@ def submit(request: str, *, project_dir: Path | None = None) -> str:
         task_id: 採番されたタスクID
     """
 
-def status(task_id: str) -> dict:
+def status(task_id: str, *, project_dir: Path | None = None) -> dict:
     """タスクの現在状態を返す。
 
     Returns:
         {
             "task_id": "cmd_001",
-            "state": "executing",  # created | decomposing | executing | aggregating | completed | failed
-            "progress": {
-                "total_subtasks": 3,
-                "completed": 1,
-                "current_wave": 1,
-            },
+            "state": "worker.completed",  # 最後のイベント種別
+            "event_count": 5,
             "last_event": "worker.completed",
+            "events": ["task.created", "decompose.requested", ...],
+            "current_round": 1,
+            "max_rounds": 3,
+            "checkpoint_mode": "auto",
         }
     """
 
-def result(task_id: str) -> str | None:
+def result(task_id: str, *, project_dir: Path | None = None) -> str | None:
     """完了していれば report.md の内容を返す。未完了なら None。"""
 ```
 
@@ -286,58 +286,101 @@ EventStore 上のファイル変更を各自が監視し、自分の担当イベ
 
 #### Executor Listener
 
+watchdog Observer への登録は CLI 側（`listener_cmd.py` の `EventRouter`）が担当する。
+`ExecutorListener` は `on_created` コールバックのみを実装し、直接 `start()` は持たない。
+
 ```python
 # src/tanebi/executor/listener.py
 
 class ExecutorListener:
-    """EventStore を監視し *.requested を処理する"""
+    """EventStore を監視し *.requested.yaml を処理する"""
 
-    def __init__(self, tanebi_root: Path, config: dict):
+    def __init__(self, tanebi_root: Path, config: dict | None = None):
         self.tanebi_root = tanebi_root
-        self.config = config
-        self.event_store = EventStore(tanebi_root)
+        # config が None のとき config.yaml から自動読み込み
+        if config is None:
+            from tanebi.config import load_config
+            cfg = load_config()
+            exec_cfg = cfg.get("tanebi", {}).get("execution", {})
+        else:
+            exec_cfg = config.get("execution", {})
+        self.max_workers = exec_cfg.get("max_parallel_workers", 5)
+        self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
 
-    def start(self):
-        """監視を開始する"""
-        # work/ 以下の events/ ディレクトリを監視
-        # 新しい *.requested.yaml を検知 → handle()
+    def on_created(self, event_path: Path) -> None:
+        """新しい *.requested.yaml を検知したときのコールバック（watchdog 経由）"""
+        if not event_path.suffix == ".yaml":
+            return
+        stem = event_path.stem  # e.g. "002_decompose.requested"
+        if not stem.endswith(".requested"):
+            return
+        if not try_claim(event_path):
+            return  # 他の Executor がすでに claim 済み
+        # task_id はパスから取得: work/{task_id}/events/{file}
+        task_id = event_path.parent.parent.name
+        # event_type を stem から取得: "decompose.requested"
+        event_type = "_".join(stem.split("_")[1:])
+        with event_path.open() as f:
+            event_data = yaml.safe_load(f)
+        payload = event_data.get("payload", {})
+        self.executor.submit(self._dispatch, task_id, event_type, payload)
 
-    def handle(self, task_id: str, event_type: str, payload: dict):
+    def shutdown(self, wait: bool = True) -> None:
+        """ThreadPoolExecutor を graceful shutdown する"""
+        self.executor.shutdown(wait=wait)
+
+    def _dispatch(self, task_id: str, event_type: str, payload: dict) -> None:
+        cmd_dir = self.tanebi_root / "work" / task_id
         if event_type == "decompose.requested":
-            self._run_decompose(task_id, payload)
-        elif event_type == "execute.requested":
-            self._run_execute(task_id, payload)
+            self._run_decompose(cmd_dir, payload)
+        elif event_type in ("execute.requested", "checkpoint.requested"):
+            self._run_execute(cmd_dir, payload)
         elif event_type == "aggregate.requested":
-            self._run_aggregate(task_id, payload)
+            self._run_aggregate(cmd_dir, payload)
 
-    def _run_decompose(self, task_id, payload):
-        result = run_claude_p(
-            system_prompt=read_template("decomposer.md"),
-            user_prompt=build_decompose_prompt(payload),
-        )
-        self.event_store.emit(task_id, "task.decomposed", parse_plan(result))
+    def _run_decompose(self, cmd_dir: Path, payload: dict) -> None:
+        system = read_template("decomposer.md")
+        result = run_claude_p(system, f"Decompose: {payload.get('request_path', '')}")
+        emit_event(cmd_dir, "task.decomposed", {
+            "task_id": cmd_dir.name, "plan": {}
+        }, validate=False)
 
-    def _run_execute(self, task_id, payload):
-        self.event_store.emit(task_id, "worker.started", {
-            "task_id": task_id,
-            "subtask_id": payload["subtask_id"],
-            "wave": payload["wave"],
-        })
-        result = run_claude_p(
-            system_prompt=read_template("worker_base.md"),
-            user_prompt=build_execute_prompt(payload),
-        )
-        self.event_store.emit(task_id, "worker.completed", parse_result(result))
+    def _run_execute(self, cmd_dir: Path, payload: dict) -> None:
+        subtask_type = payload.get("subtask_type", "normal")
+        template_name = "checkpoint.md" if subtask_type == "checkpoint" else "worker_base.md"
+        system = read_template(template_name)
+        round_num = payload.get("round", 1)
+        wave = payload.get("wave", 1)
+        emit_event(cmd_dir, "worker.started", {
+            "task_id": cmd_dir.name,
+            "subtask_id": payload.get("subtask_id", ""),
+            "wave": wave,
+            "round": round_num,
+        }, round=round_num, validate=False)
+        result = run_claude_p(system, str(payload))
+        emit_event(cmd_dir, "worker.completed", {
+            "task_id": cmd_dir.name,
+            "subtask_id": payload.get("subtask_id", ""),
+            "wave": wave,
+            "round": round_num,
+            "output": result,
+        }, round=round_num, validate=False)
 
-    def _run_aggregate(self, task_id, payload):
-        result = run_claude_p(
-            system_prompt=read_template("aggregator.md"),
-            user_prompt=build_aggregate_prompt(payload),
-        )
-        self.event_store.emit(task_id, "task.aggregated", parse_report(result))
+    def _run_aggregate(self, cmd_dir: Path, payload: dict) -> None:
+        system = read_template("aggregator.md")
+        result = run_claude_p(system, str(payload))
+        report_path = cmd_dir / "report.md"
+        report_path.write_text(result, encoding="utf-8")
+        emit_event(cmd_dir, "task.aggregated", {
+            "task_id": cmd_dir.name,
+            "report_path": str(report_path),
+        }, validate=False)
 ```
 
 #### Core Listener
+
+watchdog Observer への登録は CLI 側が担当する。
+フロー制御ロジックは `tanebi.core.flow` モジュールに委譲している。
 
 ```python
 # src/tanebi/core/listener.py
@@ -347,70 +390,35 @@ class CoreListener:
 
     def __init__(self, tanebi_root: Path):
         self.tanebi_root = tanebi_root
-        self.event_store = EventStore(tanebi_root)
+        # event_store は持たない。emit_event は tanebi.core.flow が呼ぶ。
 
-    def start(self):
-        """監視を開始する"""
-        # work/ 以下の events/ ディレクトリを監視
-        # 新しいイベントを検知 → handle()
+    def on_created(self, event_path: Path) -> None:
+        """新しいイベントファイルを検知したときのコールバック（watchdog 経由）"""
+        if not event_path.suffix == ".yaml":
+            return
+        # task_id はパスから取得: work/{task_id}/events/{file}
+        task_id = event_path.parent.parent.name
+        cmd_dir = self.tanebi_root / "work" / task_id
+        stem = event_path.stem  # e.g. "001_task.created"
+        event_type = "_".join(stem.split("_")[1:])  # "task.created"
+        with event_path.open() as f:
+            event_data = yaml.safe_load(f)
+        payload = event_data.get("payload", {})
+        self._dispatch(task_id, cmd_dir, event_type, payload)
 
-    def handle(self, task_id: str, event_type: str, payload: dict):
+    def _dispatch(self, task_id: str, cmd_dir: Path, event_type: str, payload: dict) -> None:
+        from tanebi.core import flow
         if event_type == "task.created":
-            self._on_task_created(task_id, payload)
+            flow.on_task_created(cmd_dir, payload)
         elif event_type == "task.decomposed":
-            self._on_task_decomposed(task_id, payload)
+            flow.on_task_decomposed(cmd_dir, payload)
         elif event_type == "worker.completed":
-            self._on_worker_completed(task_id, payload)
+            flow.on_worker_completed(cmd_dir, payload)
         elif event_type == "wave.completed":
-            self._on_wave_completed(task_id, payload)
-
-    def _on_task_created(self, task_id, payload):
-        self.event_store.emit(task_id, "decompose.requested", {
-            "task_id": task_id,
-            "request_path": f"work/{task_id}/request.md",
-            "plan_output_path": f"work/{task_id}/plan.md",
-        })
-
-    def _on_task_decomposed(self, task_id, payload):
-        plan = payload["plan"]
-        for subtask in plan["subtasks"]:
-            if subtask["wave"] == 1:
-                self.event_store.emit(task_id, "execute.requested", {
-                    "task_id": task_id,
-                    "subtask_id": subtask["id"],
-                    "subtask_description": subtask.get("description", ""),
-                    "wave": 1,
-                })
-
-    def _on_worker_completed(self, task_id, payload):
-        events = self.event_store.list_events(task_id)
-        wave = self._current_wave(events)
-        if self._wave_all_complete(events, wave):
-            self.event_store.emit(task_id, "wave.completed", {
-                "task_id": task_id,
-                "wave": wave,
-                "results_summary": self._summarize_wave(events, wave),
-            })
-
-    def _on_wave_completed(self, task_id, payload):
-        plan = self._read_plan(task_id)
-        current_wave = payload["wave"]
-        next_wave_tasks = [s for s in plan["subtasks"] if s["wave"] == current_wave + 1]
-
-        if next_wave_tasks:
-            for subtask in next_wave_tasks:
-                self.event_store.emit(task_id, "execute.requested", {
-                    "task_id": task_id,
-                    "subtask_id": subtask["id"],
-                    "subtask_description": subtask.get("description", ""),
-                    "wave": current_wave + 1,
-                })
-        else:
-            self.event_store.emit(task_id, "aggregate.requested", {
-                "task_id": task_id,
-                "results_dir": f"work/{task_id}/results/",
-                "report_path": f"work/{task_id}/report.md",
-            })
+            flow.on_wave_completed(cmd_dir, payload)
+        elif event_type == "checkpoint.completed":
+            flow.on_checkpoint_completed(cmd_dir, payload)
+        # その他のイベントは無視
 ```
 
 ### 6.4 Claude セッション + 外部 Listener（ハイブリッド）
@@ -453,6 +461,8 @@ def run_claude_p(
     model: str | None = None,
     timeout: int | None = None,
     allowed_tools: str = "Read,Write,Glob,Grep,Bash",
+    domain: str | None = None,          # ドメイン指定時、Learned Patterns を注入
+    knowledge_dir: Path | None = None,  # Learned Patterns の検索パス
 ) -> str:
     """claude -p を subprocess で実行し、結果テキストを返す。
 
@@ -460,10 +470,12 @@ def run_claude_p(
     - CLAUDECODE / CLAUDE_CODE_ENTRYPOINT を除去（既知バグ対策）
     - タイムアウト対応（旧 M-013 解消）
     - 失敗時は WorkerError を送出（旧 M-001 解消）
+    - domain + knowledge_dir 指定時は Learned Patterns を system_prompt に注入
     """
-    config = load_config()
-    model = model or config.get("default_model", "claude-sonnet-4-6")
-    timeout = timeout or config.get("timeout", 300)
+    cfg = load_config()
+    exec_cfg = cfg.get("tanebi", {}).get("execution", {})
+    model = model or exec_cfg.get("default_model", "claude-sonnet-4-6")
+    timeout = timeout or exec_cfg.get("timeout", 300)
 
     env = {k: v for k, v in os.environ.items()
            if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
@@ -479,11 +491,12 @@ def run_claude_p(
         text=True,
         timeout=timeout,
         env=env,
+        shell=False,
     )
 
     if result.returncode != 0:
         raise WorkerError(
-            f"claude -p failed (exit {result.returncode}): {result.stderr}"
+            f"claude -p failed (returncode={result.returncode}): {result.stderr.strip()}"
         )
 
     return result.stdout

@@ -144,15 +144,16 @@ EventStore は以下の3つの責務を持つ:
 2. **イベントの不変ログ**（記録・再現・分析）
 3. **タスクindexの内部管理**（emit時に自動更新）
 
-#### メソッド
+#### メソッド（実装: `src/tanebi/event_store/__init__.py`）
 
-| メソッド | 説明 |
-|---------|------|
-| `emit(task_id, event_type, payload)` | イベント発火。連番YAMLファイルとして追記 |
-| `create_task(task_id, request)` | タスク初期化。work dir作成 + `task.created` イベント自動発火 |
-| `list_tasks()` | タスク一覧取得（旧 History Module の役割を吸収） |
-| `get_task_summary(task_id)` | タスクサマリー取得（イベントログから集計） |
-| `rebuild_index()` | タスクインデックス再構築 |
+| メソッド | 説明 | 実装状態 |
+|---------|------|---------|
+| `emit_event(cmd_dir, event_type, payload)` | イベント発火。連番YAMLファイルとして追記 | 実装済み |
+| `create_task(work_dir, task_id, request)` | タスク初期化。work dir作成 + `task.created` イベント自動発火 | 実装済み |
+| `list_events(cmd_dir)` | タスクのイベントログを連番昇順で取得 | 実装済み |
+| `get_task_summary(cmd_dir)` | タスクサマリー取得（イベントログから集計） | 実装済み |
+| `list_tasks()` | タスク一覧取得 | **未実装（将来予定）** |
+| `rebuild_index()` | タスクインデックス再構築 | **未実装（将来予定）** |
 
 #### work dir
 
@@ -262,9 +263,9 @@ Core                        Event Store                      Executor
 - **イベントスキーマが契約**: 名前・ペイロード構造は TANEBI が定義する。双方はこのスキーマだけを知っていればよい
 - **transport層は関知しない**: ファイル / Redis / WebSocket 等は Event Store の実装詳細
 
-### 4.2 イベントカタログ（11種）
+### 4.2 イベントカタログ（15種）
 
-イベントは以下の11種に整理される。
+イベントは以下の15種に整理される。
 
 #### 記録系
 
@@ -295,6 +296,20 @@ Core                        Event Store                      Executor
 |-----------|--------------|-----------|
 | `wave.completed` | Core（Wave内全Worker完了検知時） | `{ task_id, wave, results_summary }` |
 | `task.aggregated` | Executor（Aggregator完了後） | `{ task_id, report_path, quality_summary }` |
+
+#### Checkpoint（checkpoint-design.md より）
+
+| イベント名 | 発火元 | ペイロード |
+|-----------|-------|-----------|
+| `checkpoint.requested` | Core（最終通常wave完了後） | `{ task_id, round, subtask_id, wave }` |
+| `checkpoint.completed` | Core（verdict集約後） | `{ task_id, round, verdict, failed_subtasks, summary }` |
+
+#### Learning Engine（learning-engine.md 付録 B より）
+
+| イベント名 | 発火元 | ペイロード |
+|-----------|-------|-----------|
+| `distill.requested` | Core（N≥K 検知時） | `{ task_id, domain, signal_count, signal_ids }` |
+| `distill.completed` | Executor | `{ task_id, domain, patterns_created, confidence }` |
 
 #### 例外
 
@@ -425,10 +440,12 @@ event:
 
 #### タスクインデックス
 
-EventStore はイベント発火時にタスクインデックスを自動更新する:
+**（注: `work/index.yaml` 自動管理は将来実装予定。現在は `list_events(cmd_dir)` で各タスクのイベントを直接参照し、`get_task_summary(cmd_dir)` でサマリーを取得する。）**
+
+将来の設計（現在未実装）:
 
 ```yaml
-# work/index.yaml（EventStore が自動管理）
+# work/index.yaml（EventStore が自動管理、将来実装予定）
 tasks:
   - task_id: "cmd_015"
     date: "2026-03-01"
@@ -597,6 +614,12 @@ tanebi:
     worker_max_turns: 30
     default_model: "claude-sonnet-4-6"
 
+  # === Checkpoint 設定 ===
+  checkpoint:
+    mode: auto          # always | auto | never
+    max_rounds: 3       # 最大ループ回数
+    verdict_policy: any_fail   # any_fail | majority | all_fail
+
   # === Learning Engine 設定 ===
   learning:
     signal:
@@ -656,11 +679,9 @@ tanebi/
 │   └── aggregator.md
 │
 ├── scripts/
-│   ├── command_executor.sh         # Executor リファレンス実装（subprocess向け）
-│   ├── subprocess_worker.sh        # subprocess用 Decomposer/Worker ブリッジ
-│   ├── tanebi-callback.sh          # Inbound Callbackスクリプト
-│   ├── emit_event.sh               # イベント発火（Event Store 書き込み）
-│   └── tanebi_config.sh            # パス定数
+│   └── setup.sh                    # セットアップスクリプト（venv 作成・依存インストール）
+│   # ※ Executor リファレンス実装は src/tanebi/executor/ に Python で実装
+│   # ※ イベント発火は tanebi.event_store.emit_event() (Python API)
 │
 └── docs/
     ├── design.md                   # 本文書
