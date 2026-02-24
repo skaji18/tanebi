@@ -1,5 +1,5 @@
 ---
-description: TANEBI Decomposer — タスク分解とPersona割り当て
+description: TANEBI Decomposer — タスク分解とLearned Patterns注入
 allowed-tools: [Read, Write, Glob]
 ---
 
@@ -13,14 +13,12 @@ allowed-tools: [Read, Write, Glob]
 以下のファイルを読んでください:
 - `{REQUEST_PATH}` （ユーザーの依頼内容）
 
-## Step 2: 利用可能なPersona確認
+## Step 2: Learned Patterns 確認
 
-`personas/active/` 以下の全YAMLファイルを読み、各Personaの以下を把握:
-- identity.name（名前）
-- identity.archetype（specialist/generalist/hybrid）
-- knowledge.domains（習熟ドメインと習熟度）
+`knowledge/learned/` 以下のパターンファイルを確認し、タスクに関連するドメインの
+学習済みパターンを把握する（なければスキップ）。
 
-現在の利用可能なPersona一覧: `{PERSONA_LIST}`
+関連 Learned Patterns: `{LEARNED_PATTERNS_PATHS}`
 
 ## Step 3: タスク分解
 
@@ -32,11 +30,11 @@ allowed-tools: [Read, Write, Glob]
 - 依存関係がある場合はwave（実行グループ）を使って表現
 - 分解が不要なシンプルなタスクは1サブタスクでよい
 
-**Persona割り当ての原則**:
-- サブタスクのドメインとPersonaの`knowledge.domains`を照合
-- 最も習熟度（proficiency）が高いPersonaを選択
-- 該当ドメインのPersonaがいない場合は `generalist_v1` を使用
-- **適応度スコア優先**: 同ドメインに複数の候補Personaがいる場合、`evolution.fitness_score` が最高のPersonaを優先せよ。fitness_scoreが未設定の場合は0.5として扱う
+**Worker割り当ての原則**:
+- サブタスクに適した role を割り当てる（roles/ に定義がある場合）
+- 定義がない場合は generalist を使用
+- routing_score が高い role を優先: 同ドメインに複数の候補がある場合、
+  routing_score が最高の role を選択。未設定の場合は 0.5 として扱う
 
 ## Step 4: plan.md 出力
 
@@ -52,14 +50,14 @@ plan:
   subtasks:
     - id: subtask_001
       description: "具体的なタスク内容"
-      persona: generalist_v1         # personas/active/ のファイル名（拡張子なし）
+      role: generalist           # ← persona → role に変更
       output_path: "work/{CMD_ID}/results/subtask_001.md"
       depends_on: []
       wave: 1
 
     - id: subtask_002
       description: "前のタスクに依存する内容"
-      persona: backend_specialist_v1
+      role: backend_specialist
       output_path: "work/{CMD_ID}/results/subtask_002.md"
       depends_on: [subtask_001]
       wave: 2
@@ -72,7 +70,7 @@ plan:
 ## 完了確認
 
 plan.md を書き出したら、以下を確認してください:
-- 全サブタスクにpersona が割り当てられているか
+- 全サブタスクにrole が割り当てられているか
 - waveの順序が依存関係と矛盾していないか
 - output_pathが一意（重複なし）か
 
@@ -85,7 +83,7 @@ When `checkpoint.mode` is `always` or when `auto` and task complexity is high
 ## Subtask: checkpoint_001
 type: checkpoint
 wave: {final_wave + 1}
-persona: <Persona割り当て原則に従う（Step 3参照）>
+role: <Worker割り当て原則に従う（Step 3参照）>
 description: Review all subtask results and determine pass/fail verdict.
 ```
 

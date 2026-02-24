@@ -15,14 +15,14 @@ tanebi new "<request>"
 tanebi status [<task_id>]
 ```
 
-### ペルソナ確認
+### Learned Patterns 確認
 ```bash
-tanebi persona list
+tanebi patterns list
 ```
 
-### 進化実行
+### 学習実行（手動）
 ```bash
-tanebi evolve <task_id> <persona_id>
+tanebi learn <task_id>
 ```
 
 ### Event直接発火（デバッグ・上級者向け）

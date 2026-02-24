@@ -1,5 +1,5 @@
 # TANEBI設定ファイル
-# design.md Section 9.4 準拠
+# design.md / docs/learning-engine.md 参照
 
 tanebi:
   version: "1.0"
@@ -7,11 +7,9 @@ tanebi:
   # === パス設定 ===
   paths:
     work_dir: "work"
-    persona_dir: "personas/active"
-    library_dir: "personas/library"
-    history_dir: "personas/history"
     knowledge_dir: "knowledge"
-    few_shot_dir: "knowledge/few_shot_bank"
+    signals_dir: "knowledge/signals"
+    learned_dir: "knowledge/learned"
     episode_dir: "knowledge/episodes"
 
   # === 実行設定 ===
@@ -22,16 +20,17 @@ tanebi:
     claude_native: true
     timeout: 300
 
-  # === 進化エンジン設定 ===
-  evolution:
-    fitness_weights:
-      quality_score: 0.35
-      completion_rate: 0.30
-      efficiency: 0.20
-      growth_rate: 0.15
-    fitness_window: 20           # 直近Nタスクのスライディングウィンドウ
-    few_shot_max_per_domain: 100 # ドメイン毎の最大エントリ数
-    snapshot_interval: 5         # N タスク毎に自動スナップショット
+  # === 学習エンジン設定 ===
+  learning:
+    min_signals_for_distillation: 5   # 蒸留に必要な最小シグナル数
+    max_patterns_per_domain: 100      # ドメイン毎の最大パターン数
+    routing:
+      weights:
+        quality_score: 0.35
+        completion_rate: 0.30
+        efficiency: 0.20
+        growth_rate: 0.15
+      window: 20                      # routing_score 計算のスライディングウィンドウ
 
   # === チェックポイント設定 ===
   checkpoint:

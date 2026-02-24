@@ -1,0 +1,835 @@
+# Learning Engine 設計書
+
+---
+
+## 1. 設計方針転換の背景
+
+### なぜペルソナ進化を廃止するか
+
+TANEBI の初期設計は「ペルソナが進化するマルチエージェント人格フレームワーク」を標榜していた。
+各エージェントに 4 層構造の Persona YAML を持たせ、タスク完了ごとに数値パラメータ（`risk_tolerance`, `detail_orientation` 等）を微調整し、適応度関数（`fitness_score`）で選択圧をかけるという生物学的アナロジーに基づく設計だった。
+
+しかし、実運用と検証を通じて以下の根本的な問題が判明した:
+
+**LLM は数値パラメータに対して鈍感である。**
+
+Persona YAML の `behavior` 層パラメータ（`risk_tolerance: 0.4` → `0.45` 等）を微調整しても、
+LLM の出力品質に有意な差は生じない。これは LLM の本質的な特性に起因する:
+
+1. **プロンプト感度の非線形性**: LLM は連続的な数値変化よりも、離散的な指示（「保守的に」vs「積極的に」）に反応する。0.05 の変化は実質的に無意味
+2. **コンテキスト依存性**: 出力品質はペルソナパラメータよりも、タスク記述・Few-Shot 例・コンテキスト情報に圧倒的に依存する
+3. **再現性の欠如**: 同一パラメータでも実行ごとに出力が変わるため、パラメータ変更の効果を測定できない
+
+したがって、**ペルソナの数値パラメータを「進化」させることに計算リソースと設計複雑性を費やす価値はない**。
+
+### 新しいアプローチ
+
+本質的に LLM の出力品質を左右するのは、**どのような知識（パターン・事例・教訓）をコンテキストに注入するか** である。
+
+TANEBI のコンセプトを以下に転換する:
+
+| | 旧コンセプト | 新コンセプト |
+|---|---|---|
+| 名称 | ペルソナが進化するマルチエージェント人格フレームワーク | **知識蓄積型マルチエージェント実行フレームワーク** |
+| 核心 | ペルソナの数値パラメータが進化する | **タスク経験が知識パターンに蒸留され、静かに反映される** |
+| メタファー | 生物進化（突然変異・交叉・適応度） | **種火（小さな火種が知識の炎に育つ）** |
+| 学習単位 | 個体（Persona） | **システム全体（Learned Patterns）** |
+
+---
+
+## 2. エビデンスサマリー
+
+### 「ペルソナ数値パラメータは LLM 出力に影響しない」根拠
+
+#### 観察 1: 行動パラメータの無効性
+
+Persona YAML の `behavior` セクションには以下のパラメータが定義されていた:
+
+```yaml
+behavior:
+  risk_tolerance: 0.4       # 0=保守的, 1=積極的
+  detail_orientation: 0.85  # 0=概略重視, 1=細部重視
+  speed_vs_quality: 0.3     # 0=品質最優先, 1=速度最優先
+  autonomy_preference: 0.6
+  communication_density: 0.7
+```
+
+これらの値は Worker プロンプトに注入されるが、LLM はこの数値をほとんど解釈できない。
+`risk_tolerance: 0.4` と `risk_tolerance: 0.45` の差を反映した出力の違いは、確率的揺らぎと区別できない。
+
+#### 観察 2: 進化ステップの空転
+
+`evolve.sh` は 6 段階の進化ステップ（パフォーマンス更新→失敗補正→行動調整→適応度計算→スナップショット→Few-Shot 登録）を実行する。
+このうち実際に LLM 出力品質に影響するのは**ステップ 6（Few-Shot 登録）のみ**であり、ステップ 1-5 は出力に対して実質的に中立だった。
+
+#### 観察 3: LLM に効くのは具体的な知識
+
+LLM の出力品質が実際に向上するのは以下の場合:
+- **具体的な成功事例**（Few-Shot）を提示したとき
+- **過去の失敗パターン**と回避策を提示したとき
+- **ドメイン固有のルール**を明示的に提供したとき
+
+すべて**離散的・宣言的な知識の注入**であり、連続的な数値パラメータの調整ではない。
+
+#### 結論
+
+投資すべきは「ペルソナの進化メカニズム」ではなく「知識の蓄積・蒸留・注入メカニズム」である。
+旧設計のうち Few-Shot Bank は正しい方向であった。これを中核に据え、体系的に拡張する。
+
+---
+
+## 3. 新コンセプト定義
+
+### 知識蓄積型マルチエージェント実行フレームワーク
+
+> 種火 — 小さな火種から、消えない炎へ。
+> The spark that never dies — wisdom that grows with every task.
+
+TANEBI は**タスク経験を種火として蓄え、蒸留された知識パターンをシステム全体に静かに反映するマルチエージェント実行フレームワーク**である。
+
+#### 設計の三原則
+
+| 原則 | 説明 |
+|------|------|
+| **蓄積** | すべてのタスク結果からシグナルを検出し、ドメイン別に蓄積する |
+| **蒸留** | 十分なシグナルが溜まったら、具体的タスク情報を落として汎化パターンに蒸留する |
+| **沈黙** | 蒸留された知識は Worker 起動時に自動注入される。ユーザーもエージェントも意識しない |
+
+#### 旧設計との根本的な違い
+
+| 観点 | 旧設計（ペルソナ進化） | 新設計（知識蓄積） |
+|------|----------------------|-------------------|
+| 学習の単位 | 個体（Persona の数値パラメータ） | パターン（成功/失敗の汎化知識） |
+| 学習の粒度 | 連続値の微調整（0.4 → 0.45） | 離散的なパターンの追加/削除 |
+| 知識の所在 | Persona YAML に埋め込み | `knowledge/` ディレクトリに独立管理 |
+| 効果の発現 | 不明確（LLM が数値を無視） | 明確（コンテキストにパターンが注入される） |
+| 複雑性 | 高い（適応度関数、交叉、突然変異） | 低い（シグナル検出 → 蒸留 → 注入） |
+
+---
+
+## 4. Learning Engine ライフサイクル
+
+### 4.1 概要図
+
+```
+                    Learning Engine Lifecycle
+                    ========================
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │                                                             │
+  │  1. Signal Detection          2. Accumulation               │
+  │  ┌────────────────────┐       ┌────────────────────┐       │
+  │  │ worker.completed   │──────▶│ knowledge/signals/ │       │
+  │  │ checkpoint.completed│       │   {domain}/        │       │
+  │  │ user feedback      │       │     signal_*.yaml  │       │
+  │  └────────────────────┘       └────────┬───────────┘       │
+  │                                         │                   │
+  │                                         │ N ≥ K ?           │
+  │                                         │                   │
+  │  4. Application (Silent)       3. Distillation              │
+  │  ┌────────────────────┐       ┌────────┴───────────┐       │
+  │  │ Worker/Decomposer  │◀──────│ 汎化パターン抽出    │       │
+  │  │ 起動時に自動注入    │       │ 具体情報を除去      │       │
+  │  │                    │       │ → knowledge/learned/│       │
+  │  └────────────────────┘       └────────────────────┘       │
+  │                                                             │
+  └─────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 Phase 1: Signal Detection
+
+タスク完了時に結果シグナルを検出する。シグナルはタスクの成否と品質を抽象化した軽量データ。
+
+#### シグナルの発生源
+
+| 発生源 | イベント | 説明 |
+|--------|---------|------|
+| Worker 完了 | `worker.completed` | `status` + `quality` からシグナル生成 |
+| Checkpoint 完了 | `checkpoint.completed` | `verdict` + `attribution` からシグナル生成 |
+| ユーザーフィードバック | （将来） | 構造化フィードバックを受信 |
+
+#### シグナルの分類
+
+| quality | status | シグナル種別 | weight |
+|---------|--------|-------------|--------|
+| GREEN | success | positive | 1.0 |
+| YELLOW | success | weak_positive | 0.5 |
+| RED | failure | negative | 1.0 |
+| — | — | checkpoint_feedback | 1.0 |
+
+#### シグナルの抽出ルール
+
+`worker.completed` イベントから以下を自動抽出する:
+
+1. **domain**: タスクのドメイン（`worker.completed.domain`）
+2. **quality**: 品質評価（`GREEN` / `YELLOW` / `RED`）
+3. **status**: 成否（`success` / `failure`）
+4. **abstracted_context**: タスク内容の抽象化（具体的なファイル名・変数名等を除去）
+
+`checkpoint.completed` イベントからは追加で以下を抽出:
+
+5. **attribution**: 失敗帰属（`execution` / `input` / `partial`）
+6. **round**: チェックポイントラウンド数
+
+### 4.3 Phase 2: Accumulation
+
+検出されたシグナルをドメイン別に蓄積する。
+
+```
+knowledge/signals/
+├── coding/
+│   ├── signal_20260115_001.yaml
+│   ├── signal_20260116_002.yaml
+│   └── signal_20260120_003.yaml
+├── api_design/
+│   └── signal_20260118_001.yaml
+└── testing/
+    ├── signal_20260115_001.yaml
+    └── signal_20260119_002.yaml
+```
+
+蓄積はシンプルな追記操作。シグナルファイルは不変（immutable）であり、書き換えない。
+
+#### 蓄積時の処理
+
+1. シグナル YAML をドメインディレクトリに書き出す
+2. ドメイン内のシグナル件数をカウント
+3. **N ≥ K** の条件を確認し、蒸留フェーズへの移行を判断
+
+### 4.4 Phase 3: Distillation（N≥K ルール）
+
+同一ドメインで **K 件以上**のシグナルが蓄積され、パターンの収束が検出された場合、
+具体的なタスク情報を落として汎化パターンに蒸留する。
+
+#### 蒸留の条件
+
+```
+蒸留トリガー:
+  同一ドメインのシグナル数 N ≥ K (デフォルト K=5)
+  かつ
+  同一パターン方向（positive or negative）が一定割合以上
+```
+
+#### 蒸留のプロセス
+
+```
+入力: N 件のシグナル（同一ドメイン）
+  ↓
+1. パターン収束分析
+   - positive シグナルから共通する成功アプローチを抽出
+   - negative シグナルから共通する失敗パターンを抽出
+  ↓
+2. 抽象化
+   - 具体的なタスク ID、ファイルパス、変数名を除去
+   - ドメイン固有の汎用パターンに昇格
+  ↓
+3. 信頼度算出
+   - confidence = 一致シグナル数 / 総シグナル数
+   - confidence < 0.6 の場合は蒸留を保留（データ不足）
+  ↓
+4. Learned Pattern 生成
+   - knowledge/learned/{domain}/ に YAML ファイルとして書き出し
+  ↓
+5. シグナルアーカイブ（任意）
+   - 蒸留済みシグナルを knowledge/signals/{domain}/archived/ に移動
+```
+
+#### 蒸留の主体
+
+蒸留処理は **LLM ベース**で行う。シグナルの抽象化・パターン抽出は人間の介入なしに LLM が実行する。
+具体的には `distill.requested` イベントを Event Store に発行し、Executor が LLM を使って蒸留処理を行い、`distill.completed` イベントを返す。
+
+#### 蒸留時の注意事項
+
+- **過学習の防止**: 少数のシグナルからパターンを抽出しない（K≥5 ルール）
+- **矛盾の検出**: 同一ドメインで positive と negative が拮抗する場合は蒸留を保留
+- **鮮度管理**: 古いシグナル（config で設定可能、デフォルト 90 日）は重みを減衰
+
+### 4.5 Phase 4: Application（Silent）
+
+Worker / Decomposer 起動時に、該当ドメインの Learned Patterns を**自動的に**プロンプトに注入する。
+
+#### 注入のフロー
+
+```
+1. execute.requested イベント受信
+2. subtask の domain を特定
+3. knowledge/learned/{domain}/ から全 Learned Patterns を読み込み
+4. Worker プロンプトに以下を追加:
+   - approach パターン → 「推奨アプローチ」セクション
+   - avoid パターン → 「回避すべきパターン」セクション
+   - tooling パターン → 「推奨ツール構成」セクション
+5. Worker 実行（Learned Patterns がコンテキストに含まれた状態で）
+```
+
+#### 注入の設計原則
+
+| 原則 | 説明 |
+|------|------|
+| **サイレント** | Worker は自分が Learned Patterns を受け取っていることを意識しない |
+| **非侵襲的** | 注入は追加情報の提供のみ。Worker の判断を強制しない |
+| **ドメイン限定** | 関連ドメインのパターンのみ注入。無関係な知識は注入しない |
+| **量の制御** | 注入パターン数に上限を設ける（デフォルト: approach 5 件、avoid 3 件） |
+
+---
+
+## 5. パターン分類と YAML フォーマット定義
+
+### 5.1 パターン分類
+
+Learned Patterns は以下の 4 種に分類される:
+
+| 種別 | 説明 | 例 |
+|------|------|-----|
+| **approach** | 効くアプローチ | 「テストファーストで実装するとGREEN率が高い」 |
+| **avoid** | 失敗するパターン | 「N+1クエリを放置するとRED評価になる」 |
+| **decompose** | 効く分解パターン | 「API実装は schema→handler→test の順で分解すると効率的」 |
+| **tooling** | 効くツール構成 | 「Python CLIにはclickよりargparseが軽量で適する」 |
+
+### 5.2 Learned Pattern YAML フォーマット
+
+```yaml
+# knowledge/learned/{domain}/approach_001.yaml
+id: approach_001
+type: approach
+domain: coding
+pattern: "テストファーストで実装する"
+detail: |
+  実装前にテストケースを書き、RED→GREEN→Refactorのサイクルで進める。
+  特にエッジケースを先にテストに含めておくと、実装漏れが減る。
+signal_count: 12
+confidence: 0.83
+distilled_at: "2026-01-15"
+source_signals:
+  - signal_20260110_001
+  - signal_20260111_003
+  - signal_20260112_001
+  # ... (蒸留元シグナルへの参照)
+tags: [testing, workflow, quality]
+```
+
+```yaml
+# knowledge/learned/{domain}/avoid_001.yaml
+id: avoid_001
+type: avoid
+domain: database
+pattern: "マイグレーション無しでスキーマ変更する"
+detail: |
+  既存テーブルのカラム変更をマイグレーションファイル無しで直接実行すると、
+  ロールバック不能になりRED評価につながる。
+signal_count: 7
+confidence: 0.86
+distilled_at: "2026-01-20"
+source_signals:
+  - signal_20260115_002
+  - signal_20260116_001
+tags: [database, migration, safety]
+```
+
+```yaml
+# knowledge/learned/{domain}/decompose_001.yaml
+id: decompose_001
+type: decompose
+domain: api_design
+pattern: "API実装はschema→handler→test→docsの順で分解する"
+detail: |
+  API エンドポイントの実装タスクを分解する際、
+  1. スキーマ/型定義  2. ハンドラ実装  3. テスト  4. ドキュメント
+  の順序で Wave を切ると、依存関係が最小化され並列実行効率が上がる。
+signal_count: 9
+confidence: 0.78
+distilled_at: "2026-02-01"
+source_signals:
+  - signal_20260125_001
+  - signal_20260128_002
+tags: [api, decomposition, workflow]
+```
+
+```yaml
+# knowledge/learned/{domain}/tooling_001.yaml
+id: tooling_001
+type: tooling
+domain: coding
+pattern: "Python CLIにはargparseを使う"
+detail: |
+  軽量なCLIツールではclick等の外部依存よりargparseを使うことで
+  依存関係を最小化し、CI/CD環境での実行が安定する。
+signal_count: 6
+confidence: 0.75
+distilled_at: "2026-02-05"
+source_signals:
+  - signal_20260201_001
+  - signal_20260203_001
+tags: [python, cli, dependencies]
+```
+
+### 5.3 Signal YAML フォーマット
+
+```yaml
+# knowledge/signals/{domain}/signal_20260115_001.yaml
+id: signal_20260115_001
+type: signal
+domain: coding
+task_id: cmd_042
+subtask_id: subtask_042_a
+quality: GREEN
+status: success
+weight: 1.0
+signal_type: positive
+abstracted_context: "Python CLI ツールの実装。argparse使用。テストファースト。"
+observation: |
+  テストを先に書いてから実装したことで、エッジケースのカバレッジが高く、
+  一発でGREEN評価を獲得した。
+timestamp: "2026-01-15T10:00:00"
+```
+
+```yaml
+# knowledge/signals/{domain}/signal_20260116_001.yaml
+id: signal_20260116_001
+type: signal
+domain: database
+task_id: cmd_045
+subtask_id: subtask_045_b
+quality: RED
+status: failure
+weight: 1.0
+signal_type: negative
+abstracted_context: "DBスキーマ変更。マイグレーション無しで直接ALTER TABLE実行。"
+observation: |
+  マイグレーションファイルを作成せずにスキーマを変更したため、
+  ロールバックが不可能になり、修正に余分な工数が発生。
+attribution: execution
+timestamp: "2026-01-16T14:30:00"
+```
+
+---
+
+## 6. ディレクトリ構造
+
+### 6.1 新 knowledge/ 構造
+
+旧構造と新構造の対比:
+
+```
+# 旧構造
+knowledge/
+├── few_shot_bank/          # 成功事例のみ
+│   ├── backend/
+│   └── testing/
+└── episodes/               # 未使用
+
+# 新構造
+knowledge/
+├── signals/                # Phase 2: シグナル蓄積（生データ）
+│   ├── coding/
+│   │   ├── signal_20260115_001.yaml
+│   │   └── signal_20260116_002.yaml
+│   ├── api_design/
+│   │   └── signal_20260118_001.yaml
+│   ├── database/
+│   │   └── signal_20260120_001.yaml
+│   └── testing/
+│       └── signal_20260115_001.yaml
+│
+├── learned/                # Phase 3: 蒸留済みパターン（蒸留知識）
+│   ├── coding/
+│   │   ├── approach_001.yaml
+│   │   ├── avoid_001.yaml
+│   │   └── tooling_001.yaml
+│   ├── api_design/
+│   │   ├── approach_001.yaml
+│   │   └── decompose_001.yaml
+│   ├── database/
+│   │   └── avoid_001.yaml
+│   └── testing/
+│       └── approach_001.yaml
+│
+└── _meta/                  # メタデータ
+    ├── domains.yaml        # 既知ドメイン一覧
+    └── distill_log.yaml    # 蒸留実行ログ
+```
+
+### 6.2 旧ディレクトリとの対応
+
+| 旧パス | 新パス | 備考 |
+|--------|--------|------|
+| `knowledge/few_shot_bank/` | `knowledge/learned/` | Few-Shot は approach パターンの一形態として吸収 |
+| `knowledge/episodes/` | `knowledge/signals/` | エピソード記録はシグナルとして再定義 |
+| `personas/active/*.yaml` の `knowledge.anti_patterns` | `knowledge/learned/*/avoid_*.yaml` | Persona 内蔵から独立ファイルに分離 |
+| `personas/active/*.yaml` の `knowledge.few_shot_refs` | （廃止） | 参照は不要。ドメインマッチで自動注入 |
+
+### 6.3 config.yaml のパス設定変更
+
+```yaml
+# 旧設定
+paths:
+  knowledge_dir: "knowledge"
+  few_shot_dir: "knowledge/few_shot_bank"
+  episode_dir: "knowledge/episodes"
+
+# 新設定
+paths:
+  knowledge_dir: "knowledge"
+  signals_dir: "knowledge/signals"
+  learned_dir: "knowledge/learned"
+```
+
+---
+
+## 7. 用語変更表
+
+| 旧用語 | 新用語 | 変更理由 |
+|--------|--------|---------|
+| Persona | **廃止** | 数値パラメータの進化は無意味。必要なら軽量な role 定義で代替 |
+| Evolution Engine | **Learning Engine** | 「進化」ではなく「学習（知識蓄積）」が本質 |
+| `fitness_score` | **`routing_score`** | タスク割り当て用途のみ。学習とは無関係 |
+| `evolve_persona()` | **`distill()`** | パターン蒸留が中核操作 |
+| `few_shot_bank` | **Learned Patterns** | 成功事例だけでなく失敗パターン等も含む上位概念 |
+| `anti_patterns` | **Avoid Patterns** | Learned Patterns の一種（`type: avoid`） |
+| persona YAML | **廃止（`role.yaml` に縮小可）** | 4 層モデルの大部分が不要になった |
+| config の `evolution` セクション | **`learning` セクション** | 概念の転換を反映 |
+| `evolve.sh` | **`distill.sh`（将来）** | 蒸留処理スクリプト |
+| `_fitness.py` | **`routing.py`（将来）** | ルーティング用途のスコア計算 |
+| PersonaStore | **（大幅縮小または廃止）** | role.yaml 程度なら専用 Store 不要 |
+| `personas/active/` | **`roles/`（将来移行）** | 軽量 role 定義の格納先 |
+| `personas/history/` | **（廃止）** | スナップショット不要 |
+| `personas/library/` | **（廃止）** | テンプレート不要 |
+
+### コード・設定での変更箇所
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `config.yaml` | `evolution:` → `learning:`, パス設定更新 |
+| `src/tanebi/core/evolve.py` | → `src/tanebi/core/distill.py`（リネーム + 大幅書き換え） |
+| `src/tanebi/core/fitness.py` | → `src/tanebi/core/routing.py`（ルーティング用途に限定） |
+| `src/tanebi/core/persona_ops.py` | → 大幅縮小。role.yaml 操作のみ |
+| `src/tanebi/cli/evolve_cmd.py` | → `src/tanebi/cli/distill_cmd.py` |
+| `src/tanebi/cli/show_evolution.py` | → `src/tanebi/cli/show_patterns.py` |
+| `events/schema.yaml` | `distill.requested` / `distill.completed` イベント追加 |
+
+---
+
+## 8. routing_score の設計
+
+### 8.1 fitness_score との違い
+
+旧 `fitness_score` は「ペルソナの進化度合い」を表す多目的指標だった。
+品質・完了率・効率・成長率を加重平均し、ペルソナの「優劣」を測ろうとしていた。
+
+新 `routing_score` は**タスク割り当て（ルーティング）専用**の単一目的指標である。
+
+| 観点 | fitness_score（旧） | routing_score（新） |
+|------|--------------------|--------------------|
+| 目的 | ペルソナの総合評価 | タスク割り当ての最適化 |
+| 用途 | 進化の方向判断、交叉対象選択、表示 | **Decomposer が Worker を選ぶときだけ** |
+| 計算対象 | 個体（Persona）の総合能力 | ドメイン×Worker の適合度 |
+| 学習への影響 | あり（進化を駆動） | **なし**（学習は Learning Engine が担当） |
+| 更新頻度 | タスク完了ごと | タスク完了ごと（ただし Learning Engine とは独立） |
+
+### 8.2 routing_score の計算
+
+```
+routing_score(worker, domain) =
+  domain_success_rate(worker, domain) * 0.6
+  + recent_quality_avg(worker, domain) * 0.4
+```
+
+- `domain_success_rate`: そのドメインでの成功率（直近 N タスク）
+- `recent_quality_avg`: 直近 N タスクの品質平均（GREEN=1.0, YELLOW=0.5, RED=0.0）
+
+`routing_score` は **Worker × Domain のマトリクス**で管理される。
+Persona YAML に埋め込まず、独立したインデックスファイルとして管理する。
+
+```yaml
+# knowledge/_meta/routing_scores.yaml
+routing:
+  - worker_id: worker_1
+    scores:
+      coding: 0.85
+      api_design: 0.72
+      testing: 0.90
+  - worker_id: worker_2
+    scores:
+      coding: 0.65
+      database: 0.88
+      api_design: 0.70
+  updated_at: "2026-02-24T12:00:00"
+```
+
+### 8.3 Decomposer でのルーティング
+
+Decomposer がサブタスクを Worker に割り当てる際:
+
+1. サブタスクのドメインを特定
+2. `routing_scores.yaml` から各 Worker のドメインスコアを参照
+3. 最もスコアの高い Worker を割り当て（同スコアならラウンドロビン）
+
+`routing_score` はあくまで**ヒント**であり、Decomposer の最終判断を拘束しない。
+
+---
+
+## 9. role 定義
+
+### 9.1 Persona を置き換える軽量 role.yaml の設計方針
+
+旧 Persona YAML は 4 層・200 行規模の重厚なモデルだった。
+新しい role.yaml は**必要最小限のメタデータ**のみを定義する。
+
+#### 設計方針
+
+| 方針 | 説明 |
+|------|------|
+| **知識を外に出す** | ドメイン知識は `knowledge/learned/` に。role が持つ必要はない |
+| **実績を外に出す** | パフォーマンス実績は `routing_scores.yaml` に。role が持つ必要はない |
+| **行動を捨てる** | behavior パラメータは LLM に無効。削除 |
+| **ID と役割だけ** | Worker を識別し、どのモデルを使うかだけ定義すれば十分 |
+
+### 9.2 role.yaml スキーマ
+
+```yaml
+# roles/worker_1.yaml
+role:
+  id: "worker_1"
+  base_model: "claude-sonnet-4-6"
+  description: "汎用 Worker。全ドメイン対応。"
+  preferred_domains:       # ルーティングの補助ヒント（任意）
+    - coding
+    - testing
+  created_at: "2026-02-24"
+```
+
+旧 Persona YAML（~200 行）に対して、role.yaml は **~10 行**で済む。
+
+### 9.3 role.yaml と Learned Patterns の関係
+
+```
+旧: Persona YAML に知識を内包
+    persona.knowledge.few_shot_refs → Worker に注入
+    persona.knowledge.anti_patterns → Worker に注入
+
+新: role.yaml は知識を持たない
+    knowledge/learned/{domain}/ → ドメインマッチで Worker に自動注入
+    role.yaml → Worker の識別情報のみ
+```
+
+知識が Persona に紐づかないため、**全 Worker が同じ Learned Patterns を共有**する。
+これはシステム全体の学習であり、個体の進化ではない。
+
+### 9.4 ドメインルーティングが必要な場合
+
+role.yaml の `preferred_domains` は **soft hint** であり、Decomposer が参考にする程度。
+実際のルーティングは `routing_scores.yaml` に基づく。
+
+Worker が特定ドメインに強い場合、それは role.yaml に書くのではなく、
+`routing_scores.yaml` の実績データとして自然に現れる。
+
+---
+
+## 10. 旧設計（ペルソナ進化）との差分まとめ
+
+### 10.1 廃止される機能
+
+| 機能 | 旧 | 新 | 理由 |
+|------|-----|-----|------|
+| Persona 4 層モデル | Layer 1-4 全て | role.yaml（ID + モデルのみ） | 4 層のうち LLM 出力に影響するのは知識層のみ。知識は外部化 |
+| behavior パラメータ | risk_tolerance 等 5 項目 | 廃止 | LLM は数値パラメータに鈍感 |
+| performance 実績 | total_tasks, success_rate 等 | routing_scores.yaml に外部化 | Persona に埋め込む必要なし |
+| evolution メタデータ | generation, mutations_log 等 | 廃止 | 世代管理不要 |
+| 適応度関数（4 因子加重） | quality×0.35 + completion×0.30 + ... | routing_score（2 因子） | ルーティング以外の用途がないため簡素化 |
+| Persona Snapshot | 5 タスクごとの自動保存 | 廃止 | ロールバックの必要性がない |
+| Persona Copy/Merge | クローン・交叉操作 | 廃止 | 個体の複製・交叉は無意味 |
+| PersonaStore Protocol | KVS インターフェース | 大幅縮小 | role.yaml の読み書きのみ |
+| `evolve.sh` 6 段階ステップ | パフォーマンス更新→失敗補正→行動調整→適応度計算→スナップショット→Few-Shot | `distill()` 1 ステップ | シグナル蒸留のみが有効 |
+
+### 10.2 存続・進化する機能
+
+| 機能 | 旧 | 新 | 変更点 |
+|------|-----|-----|--------|
+| Few-Shot Bank | knowledge/few_shot_bank/ | knowledge/learned/ (approach パターン) | 成功事例だけでなく全パターン種を包含 |
+| anti_patterns | Persona 内蔵 | knowledge/learned/ (avoid パターン) | Persona から分離、独立管理 |
+| Event Store | 変更なし | 変更なし | 安定。`distill.*` イベント追加のみ |
+| フロー制御 | 変更なし | DISTILL ステップ追加 | AGGREGATE 後に DISTILL ステップ |
+| config.yaml | evolution セクション | learning セクション | パラメータ名変更 |
+
+### 10.3 新規追加される機能
+
+| 機能 | 説明 |
+|------|------|
+| Signal Detection | worker.completed からシグナルを自動抽出 |
+| Signal Accumulation | ドメイン別シグナル蓄積（knowledge/signals/） |
+| Pattern Distillation | N≥K ルールに基づくパターン蒸留 |
+| Silent Application | Worker 起動時の自動パターン注入 |
+| routing_scores.yaml | Worker×Domain のルーティングマトリクス |
+| distill.requested/completed | 蒸留処理用の新イベント |
+
+---
+
+## 11. 移行方針
+
+### 11.1 既存 personas/ ディレクトリの扱い
+
+| 段階 | 作業 | 影響 |
+|------|------|------|
+| Phase 1 | `personas/active/*.yaml` から `knowledge` 層の `few_shot_refs`, `anti_patterns` を `knowledge/learned/` に移行 | Persona YAML はそのまま残る |
+| Phase 2 | `personas/active/*.yaml` を `roles/*.yaml` に縮小変換 | behavior, performance, evolution 層を削除 |
+| Phase 3 | `personas/` ディレクトリを `roles/` にリネーム。旧ディレクトリを削除 | PersonaStore → 廃止 |
+
+### 11.2 コード変更ロードマップ
+
+#### Wave 1: 知識基盤の構築（Breaking change なし）
+
+1. `knowledge/signals/` ディレクトリ構造を作成
+2. `knowledge/learned/` ディレクトリ構造を作成
+3. Signal Detection ロジックの実装（`src/tanebi/core/signal.py`）
+4. Signal YAML の書き出し処理の実装
+
+#### Wave 2: 蒸留エンジン
+
+5. `src/tanebi/core/distill.py` の新規作成（`evolve.py` とは別ファイル）
+6. `distill.requested` / `distill.completed` イベントの追加
+7. 蒸留処理の実装（LLM ベースのパターン抽出）
+8. `knowledge/_meta/distill_log.yaml` の管理
+
+#### Wave 3: サイレント注入
+
+9. Worker テンプレート (`templates/worker_base.md`) に Learned Patterns 注入セクションを追加
+10. Executor の Worker 起動時に `knowledge/learned/{domain}/` を読み込み、プロンプトに注入するロジック
+11. 注入量の制御（config.yaml の `learning.max_inject_*` パラメータ）
+
+#### Wave 4: ルーティング
+
+12. `src/tanebi/core/routing.py` の新規作成（`fitness.py` のルーティング部分を移植）
+13. `knowledge/_meta/routing_scores.yaml` の生成・更新ロジック
+14. Decomposer テンプレートでの routing_score 参照
+
+#### Wave 5: 旧機能の廃止
+
+15. `evolve.py` の処理を `signal.py` + `distill.py` + `routing.py` に分散完了
+16. `fitness.py` のルーティング以外の機能を削除
+17. `persona_ops.py` の Copy/Merge/Snapshot 機能を削除
+18. Persona YAML → role.yaml への変換スクリプトの作成と実行
+19. config.yaml の `evolution` → `learning` セクション移行
+20. テストの更新（旧 test_evolve.py → test_distill.py, test_signal.py, test_routing.py）
+
+### 11.3 後方互換性
+
+- Wave 1-4 は**非破壊的**。旧 Persona 機構と新 Learning Engine が並行稼働可能
+- Wave 5 で旧機構を廃止。この時点で breaking change が発生
+- 移行期間中、旧 `evolve.sh` と新 Signal Detection は共存する
+
+---
+
+## 12. 設計の制約と今後の課題
+
+### 12.1 現時点の制約
+
+| 制約 | 説明 | 対処方針 |
+|------|------|---------|
+| **蒸留品質は LLM 依存** | パターン抽出の品質は蒸留を行う LLM の能力に依存する | 蒸留結果の confidence を測定し、閾値未満は破棄 |
+| **ドメイン分類の曖昧さ** | タスクのドメイン特定が自動化困難な場合がある | 初期は worker.completed の domain フィールドに依存。将来的にドメイン推定 LLM を導入 |
+| **シグナル量の Cold Start** | 初期段階ではシグナルが少なく、蒸留が発動しない | K の初期値を低め（5）に設定。旧 Few-Shot Bank のデータをシグナルに変換して初期投入も検討 |
+| **パターンの陳腐化** | 技術や要件の変化により過去のパターンが無効になる場合がある | パターンに `distilled_at` を記録し、一定期間経過後に再検証する仕組みを将来導入 |
+| **注入量の最適化** | 注入パターンが多すぎるとコンテキスト圧迫、少なすぎると効果薄 | config.yaml で上限を設定し、confidence 順で上位のみ注入 |
+
+### 12.2 今後の課題
+
+#### 短期（Wave 1-3 完了後）
+
+- **蒸留品質の測定フレームワーク**: 蒸留されたパターンが実際に品質向上に寄与しているか測定する仕組み
+- **シグナル→パターンの自動パイプライン**: 蒸留トリガーの自動化（現時点では手動 or タスク完了時のフック）
+- **旧 Few-Shot Bank データの移行スクリプト**: 既存の `knowledge/few_shot_bank/` データを `knowledge/learned/` + `knowledge/signals/` 形式に変換
+
+#### 中期
+
+- **Cross-Domain Patterns**: 複数ドメインに跨がるパターンの蒸留（例: 「API + テスト」の複合パターン）
+- **Pattern Versioning**: 同一パターンの更新・進化の追跡
+- **Confidence Decay**: 時間経過による confidence の減衰とパターンの自動再検証
+- **ユーザーフィードバックの統合**: 構造化フィードバックをシグナルソースとして追加
+
+#### 長期
+
+- **Knowledge GC**: 利用されないパターンの自動削除
+- **Pattern Conflicts Resolution**: 矛盾するパターン（approach vs avoid が同一行動を指す）の自動検出と解決
+- **Learning Effectiveness Dashboard**: 学習の効果をシステム全体で可視化するダッシュボード
+- **Federated Learning**: 複数の TANEBI インスタンス間でのパターン共有（組織レベルの知識蓄積）
+
+### 12.3 設計上の意図的な制約
+
+以下は意図的に設計に含めていない機能である:
+
+| 除外した機能 | 除外理由 |
+|------------|---------|
+| **パターンの自動適用強制** | LLM の判断を尊重。パターンは参考情報であり、指示ではない |
+| **リアルタイム学習** | タスク実行中にパターンを更新すると一貫性が崩れる。蒸留はタスク完了後 |
+| **Worker 個別の知識** | 知識はシステム共有。個別 Worker の知識サイロ化を防ぐ |
+| **ペルソナの完全廃止（Phase 1 で）** | 後方互換性のため段階的に移行。急激な変更は避ける |
+
+---
+
+## 付録 A: config.yaml learning セクション（新設計）
+
+```yaml
+tanebi:
+  # === Learning Engine 設定 ===
+  learning:
+    # シグナル蓄積
+    signal:
+      auto_detect: true              # worker.completed からシグナル自動検出
+      retention_days: 90             # シグナル保持日数（超過分は重み減衰）
+
+    # 蒸留
+    distillation:
+      min_signals: 5                 # 蒸留に必要な最小シグナル数（K）
+      min_confidence: 0.6            # 蒸留に必要な最小信頼度
+      auto_trigger: true             # N≥K 到達時に自動蒸留
+      model: "claude-sonnet-4-6"     # 蒸留に使用するモデル
+
+    # パターン注入
+    injection:
+      max_approach: 5                # 注入する approach パターンの上限
+      max_avoid: 3                   # 注入する avoid パターンの上限
+      max_decompose: 2               # 注入する decompose パターンの上限
+      max_tooling: 2                 # 注入する tooling パターンの上限
+      sort_by: confidence            # 注入優先度（confidence / distilled_at）
+
+    # ルーティング
+    routing:
+      score_window: 20               # 直近 N タスクでスコア計算
+      success_weight: 0.6            # ドメイン成功率の重み
+      quality_weight: 0.4            # 品質平均の重み
+```
+
+## 付録 B: 新イベント定義
+
+```yaml
+# events/schema.yaml に追加
+
+  # Learning Engine Events
+  distill.requested:
+    task_id: string
+    domain: string
+    signal_count: integer
+    signal_ids: array               # 蒸留対象のシグナル ID リスト
+    timestamp: string
+
+  distill.completed:
+    task_id: string
+    domain: string
+    patterns_created: array          # 生成された Learned Pattern ID リスト
+    confidence: number
+    timestamp: string
+```
+
+## 付録 C: フロー制御の変更
+
+旧フロー:
+```
+DECOMPOSE → EXECUTE → AGGREGATE → (EVOLVE)
+```
+
+新フロー:
+```
+DECOMPOSE → EXECUTE → AGGREGATE → SIGNAL_DETECT → (DISTILL if N≥K)
+```
+
+SIGNAL_DETECT は毎タスク実行。DISTILL は N≥K 条件成立時のみ実行。
