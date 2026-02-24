@@ -15,16 +15,6 @@ tanebi new "<request>"
 tanebi status [<task_id>]
 ```
 
-### Learned Patterns 確認
-```bash
-tanebi patterns list
-```
-
-### 学習実行（手動）
-```bash
-tanebi learn <task_id>
-```
-
 ### Event直接発火（デバッグ・上級者向け）
 ```bash
 tanebi emit <task_id> <event_type> [key=value ...]

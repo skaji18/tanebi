@@ -278,11 +278,11 @@ summary: "全体の要約（1〜2文）"
 
 ## attribution の意味
 
-| 値 | 意味 | 進化エンジンへの影響 |
-|----|------|---------------------|
-| execution | Worker の実行品質が原因 | fitness に減点 |
-| input | 入力（依頼・計画）の品質が原因 | スキップ（ペルソナ責任外） |
-| partial | 部分的な問題 | 軽度減点（weight 0.5） |
+| 値 | 意味 | Learning Engine への影響 |
+|----|------|--------------------------|
+| execution | Worker の実行品質が原因 | negative シグナルとして記録 |
+| input | 入力（依頼・計画）の品質が原因 | スキップ（入力品質の問題） |
+| partial | 部分的な問題 | weak_negative シグナルとして記録（weight 0.5） |
 | ~ (null) | verdict=pass の場合 | 影響なし |
 ```
 
@@ -400,7 +400,6 @@ decompose.requested:
   task_id: cmd_001
   round: 2
   request_path: "work/cmd_001/request.md"
-  persona_list: [...]
   plan_output_path: "work/cmd_001/plan.round2.md"
   checkpoint_feedback:
     previous_round: 1
@@ -483,41 +482,42 @@ def _should_checkpoint(config: dict, plan: dict) -> bool:
 
 ---
 
-## 9. Evolution Engine への影響
+## 9. Learning Engine への影響
 
 ### 9.1 概要
 
-Checkpoint の結果は進化エンジン（`evolve.sh` / `_fitness.py`）にフィードバックされる。
-最終 round の結果を基準とし、途中 round の失敗は attribution に応じて処理する。
+Checkpoint の結果は Learning Engine にフィードバックされる。
+最終 round の結果を基準とし、途中 round の失敗は attribution に応じてシグナルを記録する。
 
-### 9.2 fitness 反映ルール
+### 9.2 シグナル記録ルール
 
-| 状況 | fitness への影響 |
-|------|-----------------|
-| 最終 round の成功結果 | 通常通り fitness に反映（quality, completion_rate 等） |
-| 途中 round の失敗 — `attribution: execution` | fitness に減点（Worker の実行品質が原因） |
-| 途中 round の失敗 — `attribution: input` | スキップ（ペルソナ責任外。依頼・計画の問題） |
-| 途中 round の失敗 — `attribution: partial` | 軽度減点（weight 0.5） |
+| 状況 | Learning Engine への影響 |
+|------|--------------------------|
+| 最終 round の成功結果 | positive シグナルとして記録（quality, domain 等） |
+| 途中 round の失敗 — `attribution: execution` | negative シグナルとして記録（Worker の実行品質が原因） |
+| 途中 round の失敗 — `attribution: input` | スキップ（入力品質の問題。Worker のシグナルではない） |
+| 途中 round の失敗 — `attribution: partial` | weak_negative シグナルとして記録（weight 0.5） |
 
-### 9.3 few_shot_bank への影響
+### 9.3 Learned Patterns への影響
 
-| 状況 | few_shot_bank への登録 |
-|------|----------------------|
-| 最終 round の成功結果 | **登録する**（成功事例として蓄積） |
-| 途中 round の結果 | **登録しない**（改善途中の不完全な結果） |
-| 全 round 失敗（best effort aggregate） | **登録しない** |
+| 状況 | knowledge/learned/ への登録 |
+|------|----------------------------|
+| 最終 round の成功結果 | **シグナル蓄積対象**（蒸留条件 N≥K 到達時にパターン生成） |
+| 途中 round の結果 | **対象外**（改善途中の不完全な結果） |
+| 全 round 失敗（best effort aggregate） | **対象外** |
 
-### 9.4 anti_pattern への影響
+### 9.4 avoid パターンへの影響
 
-Checkpoint の fail 理由は anti_pattern として自動蓄積できる:
+Checkpoint の fail 理由は avoid パターンとして蓄積できる:
 
 ```yaml
-# Persona YAML への追加例
-anti_patterns:
-  - pattern: "テストカバレッジ不足"
-    detected_count: 1
-    correction: "主要なエッジケースを含むテストを明示的に記述"
-    source: "checkpoint_round1_cmd_001"
+# knowledge/learned/{domain}/avoid_NNN.yaml
+id: avoid_001
+type: avoid
+domain: testing
+pattern: "テストカバレッジ不足"
+detail: "主要なエッジケースを含むテストを明示的に記述する"
+source: "checkpoint_round1_cmd_001"
 ```
 
 ---
@@ -848,7 +848,6 @@ def on_checkpoint_completed(cmd_dir: Path, payload: dict) -> None:
             "task_id": task_id,
             "round": next_round,
             "request_path": str(cmd_dir / "request.md"),
-            "persona_list": [],
             "plan_output_path": str(cmd_dir / f"plan.round{next_round}.md"),
             "checkpoint_feedback": {
                 "previous_round": round_,

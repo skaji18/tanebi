@@ -321,7 +321,6 @@ class ExecutorListener:
         self.event_store.emit(task_id, "worker.started", {
             "task_id": task_id,
             "subtask_id": payload["subtask_id"],
-            "persona_id": extract_persona_id(payload["persona_file"]),
             "wave": payload["wave"],
         })
         result = run_claude_p(
@@ -369,7 +368,6 @@ class CoreListener:
         self.event_store.emit(task_id, "decompose.requested", {
             "task_id": task_id,
             "request_path": f"work/{task_id}/request.md",
-            "persona_list": self._list_personas(),
             "plan_output_path": f"work/{task_id}/plan.md",
         })
 
@@ -380,9 +378,7 @@ class CoreListener:
                 self.event_store.emit(task_id, "execute.requested", {
                     "task_id": task_id,
                     "subtask_id": subtask["id"],
-                    "subtask_file": subtask["description"],
-                    "persona_file": f"personas/active/{subtask['persona']}.yaml",
-                    "output_path": subtask["output_path"],
+                    "subtask_description": subtask.get("description", ""),
                     "wave": 1,
                 })
 
@@ -406,9 +402,7 @@ class CoreListener:
                 self.event_store.emit(task_id, "execute.requested", {
                     "task_id": task_id,
                     "subtask_id": subtask["id"],
-                    "subtask_file": subtask["description"],
-                    "persona_file": f"personas/active/{subtask['persona']}.yaml",
-                    "output_path": subtask["output_path"],
+                    "subtask_description": subtask.get("description", ""),
                     "wave": current_wave + 1,
                 })
         else:
@@ -506,7 +500,7 @@ def run_claude_p(
 | `templates/aggregator.md` | 結果統合 | aggregate.requested ハンドラ |
 
 テンプレート内の `{PLACEHOLDER}` は使わない。
-具体的な値（request 内容、persona 情報等）は user prompt として stdin で渡す。
+具体的な値（request 内容、subtask 詳細等）は user prompt として stdin で渡す。
 テンプレートはロール定義（system prompt）、具体値はプロンプト本文（user prompt）。
 
 ---
@@ -642,12 +636,12 @@ claude
 | `src/tanebi/cli/main.py` | `tanebi listener` / `tanebi new` サブコマンド追加 |
 | `config.yaml` | `execution.claude_native` フィールド追加 |
 
-### 既存ファイルで不要になるもの（Phase 4 で削除）
+### 既存ファイルで不要になるもの（削除済み）
 
 | ファイル | 理由 |
 |---------|------|
-| `scripts/command_executor.sh` | Python Executor Listener に置換 |
-| `scripts/subprocess_worker.sh` | Python worker.py に置換 |
+| `scripts/command_executor.sh` | Python Executor Listener（`src/tanebi/executor/listener.py`）に置換・削除済み |
+| `scripts/subprocess_worker.sh` | Python worker（`src/tanebi/executor/worker.py`）に置換・削除済み |
 
 ---
 

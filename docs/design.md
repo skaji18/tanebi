@@ -186,22 +186,23 @@ work/{task_id}/
 
 | メソッド | 説明 |
 |---------|------|
-| `copy(persona_id, new_id)` | Portable粒度で複製。Performance は白紙スタート |
-| `merge(persona_a, persona_b, weights)` | 2体の role を加重結合し新 role を生成（非破壊） |
-| `snapshot(persona_id)` | Full粒度で `personas/history/` に保存 |
-| `list()` | アクティブ role 一覧 |
-| `restore(snapshot_id, persona_id)` | スナップショットから role を復元 |
+| `get_patterns(domain)` | 指定ドメインの Learned Patterns を取得 |
+| `save_signal(domain, signal)` | シグナルを `knowledge/signals/{domain}/` に書き出す |
+| `save_pattern(domain, pattern)` | 蒸留済みパターンを `knowledge/learned/{domain}/` に書き出す |
+| `list_domains()` | 既知ドメイン一覧 |
 
 ファイル実装:
 
 ```
-personas/
-├── active/               # アクティブPersona
-│   ├── generalist_v1.yaml
-│   └── backend_specialist_v2.yaml
-├── library/              # テンプレート・スナップショット
-│   └── seeds/
-└── history/              # 自動スナップショット
+knowledge/
+├── signals/              # シグナル蓄積（生データ）
+│   ├── coding/
+│   └── testing/
+├── learned/              # 蒸留済みパターン
+│   ├── coding/
+│   └── testing/
+└── _meta/                # メタデータ
+    └── distill_log.yaml
 ```
 
 ### 3.4 KnowledgeStore ファイル構造
@@ -275,16 +276,16 @@ Core                        Event Store                      Executor
 
 | イベント名 | 発火元 | ペイロード |
 |-----------|-------|-----------|
-| `decompose.requested` | Core（task.created 後） | `{ task_id, request_path, persona_list, plan_output_path }` |
-| `execute.requested` | Core（task.decomposed 後） | `{ task_id, subtask_id, subtask_file, persona_file, output_path, wave }` |
+| `decompose.requested` | Core（task.created 後） | `{ task_id, request_path, plan_output_path }` |
+| `execute.requested` | Core（task.decomposed 後） | `{ task_id, subtask_id, subtask_description, wave }` |
 | `aggregate.requested` | Core（全 worker.completed 後） | `{ task_id, results_dir, report_path }` |
 
 #### Executor → Core（完了イベント）
 
 | イベント名 | 発火元 | ペイロード |
 |-----------|-------|-----------|
-| `task.decomposed` | Executor（Decomposer完了後） | `{ task_id, plan: { subtasks[], waves, persona_assignments[] } }` |
-| `worker.started` | Executor（Worker起動時） | `{ task_id, subtask_id, persona_id, wave }` |
+| `task.decomposed` | Executor（Decomposer完了後） | `{ task_id, plan: { subtasks[], waves } }` |
+| `worker.started` | Executor（Worker起動時） | `{ task_id, subtask_id, wave }` |
 | `worker.progress` | Executor（Worker中間出力時） | `{ task_id, subtask_id, message, percent? }` |
 | `worker.completed` | Executor（Worker完了時） | `{ task_id, subtask_id, status, quality, domain }` |
 
@@ -331,16 +332,13 @@ events:
   decompose.requested:
     task_id: string
     request_path: string      # work/{task_id}/request.md
-    persona_list: string      # カンマ区切りのPersona ID一覧
     plan_output_path: string  # work/{task_id}/plan.md
     timestamp: string
 
   execute.requested:
     task_id: string
     subtask_id: string
-    subtask_file: string      # work/{task_id}/results/subtask_NNN.md の入力定義
-    persona_file: string      # personas/active/{id}.yaml
-    output_path: string       # work/{task_id}/results/subtask_NNN.md
+    subtask_description: string  # サブタスクの説明
     wave: integer
     timestamp: string
 
@@ -356,12 +354,10 @@ events:
     plan:
       subtasks: array
       waves: integer
-      persona_assignments: array
 
   worker.started:
     task_id: string
     subtask_id: string
-    persona_id: string
     wave: integer
 
   worker.progress:
@@ -423,9 +419,7 @@ event:
   payload:
     task_id: "cmd_001"
     subtask_id: "subtask_001"
-    subtask_file: "work/cmd_001/plan_subtasks/subtask_001.md"
-    persona_file: "personas/active/backend_specialist_v2.yaml"
-    output_path: "work/cmd_001/results/subtask_001.md"
+    subtask_description: "FizzBuzz の実装。Python。テストファースト。"
     wave: 1
 ```
 
@@ -443,15 +437,14 @@ tasks:
     succeeded: 4
     quality_summary: { GREEN: 3, YELLOW: 1, RED: 0 }
     domains: [backend, testing, docs]
-    personas_used: [backend_specialist_v2, test_writer_v1, docs_seed_v1]
     report_path: "work/cmd_015/report.md"
 ```
 
 #### イベント発火
 
 ```bash
-# シェルからのイベント発火（リファレンス実装）
-bash scripts/emit_event.sh <task_dir> <event_type> '<payload_yaml>'
+# CLI からのイベント発火
+tanebi emit <task_id> <event_type> [key=value ...]
 ```
 
 ### 4.5 Event Store の特性
@@ -471,124 +464,6 @@ bash scripts/emit_event.sh <task_dir> <event_type> '<payload_yaml>'
 #### 冪等性
 
 イベント ID（`evt_NNN`）による重複処理の防止。既存の idempotency_key を活用する。
-
----
-
-## 5. Persona 4層モデル
-
-### 5.1 4層構造
-
-```mermaid
-graph TD
-    L4["Layer 4: Identity（同一性）<br/>名前・口調・アーキタイプ・ベースモデル<br/>変更頻度: 月単位"]
-    L3["Layer 3: Knowledge（知識）<br/>ドメイン習熟度・Few-Shot事例・アンチパターン<br/>変更頻度: タスク毎"]
-    L2["Layer 2: Behavior（行動特性）<br/>リスク許容度・詳細志向度・速度vs品質<br/>変更頻度: 数タスク毎"]
-    L1["Layer 1: Performance（実績）<br/>信頼スコア・成功率・品質平均・連勝記録<br/>変更頻度: タスク毎"]
-
-    L4 --> L3 --> L2 --> L1
-
-    style L4 fill:#4a90d9,color:#fff
-    style L3 fill:#7ab648,color:#fff
-    style L2 fill:#f5a623,color:#fff
-    style L1 fill:#d0021b,color:#fff
-```
-
-### 5.2 Persona YAMLスキーマ
-
-```yaml
-# personas/active/agent_alpha_v3.yaml
-persona:
-  id: "agent_alpha_v3"
-  base_model: "claude-sonnet-4-6"
-  version: 3
-  created_at: "2026-03-01T12:00:00"
-  parent_version: "agent_alpha_v2"
-  lineage: ["agent_alpha_v1", "agent_alpha_v2"]
-
-  # Layer 4: Identity（同一性）
-  identity:
-    name: "鉄壁のDB職人"
-    speech_style: "冷静沈着"
-    archetype: specialist     # specialist | generalist | hybrid
-    origin: evolved           # seeded | copied | merged | evolved
-
-  # Layer 3: Knowledge（知識）
-  knowledge:
-    domains:
-      - name: database_design
-        proficiency: 0.87     # 0.0〜1.0
-        task_count: 42
-        last_updated: "2026-03-15"
-      - name: api_design
-        proficiency: 0.65
-        task_count: 15
-        last_updated: "2026-03-10"
-    learned_pattern_refs:
-      - "episodic:db:task042_migration_success"
-      - "episodic:db:task067_index_optimization"
-    anti_patterns:
-      - pattern: "N+1クエリの見落とし"
-        detected_count: 3
-        correction: "JOINまたはeager loadを明示的に検討"
-
-  # Layer 2: Behavior（行動特性）
-  behavior:
-    risk_tolerance: 0.4       # 0=保守的, 1=積極的
-    detail_orientation: 0.85  # 0=概略重視, 1=細部重視
-    speed_vs_quality: 0.3     # 0=品質最優先, 1=速度最優先
-    autonomy_preference: 0.6
-    communication_density: 0.7
-
-  # Layer 1: Performance（実績）
-  performance:
-    trust_score: 72           # 0-100, Trust Module管理
-    total_tasks: 57
-    success_rate: 0.89
-    avg_quality: GREEN
-    specialization_index: 0.75
-    streak:
-      current: 5
-      best: 12
-    domain_success_rates:
-      database_design: 0.95
-      api_design: 0.80
-      frontend: 0.45
-
-  # Learning Metadata
-  learning:
-    generation: 3
-    last_distill_event:
-      type: pattern_reinforcement
-      field: detail_orientation
-      delta: +0.05
-      trigger: "task_089: 詳細レビューで品質向上を確認"
-      timestamp: "2026-03-15T14:00:00"
-    distill_log:
-      - { gen: 1, type: seed, note: "初期シード" }
-      - { gen: 2, type: reinforcement, field: "database_design.proficiency", delta: +0.12 }
-      - { gen: 3, type: reinforcement, field: "detail_orientation", delta: +0.05 }
-    crossover_history: []
-```
-
-### 5.3 粒度の定義
-
-| 粒度 | 用途 | 含む層 | サイズ目安 |
-|------|------|-------|----------|
-| **Full** | 完全バックアップ・移植 | Layer 1-4 全て + Evolution Metadata | ~200行 YAML |
-| **Portable** | 他エージェントへのコピー・合成 | Layer 2-4（Performance除外） | ~100行 YAML |
-| **Seed** | 新エージェント初期化用 | Layer 4 + Behavior初期値のみ | ~30行 YAML |
-
-Portable粒度がPerformanceを除外する理由: 信頼スコアや成功率は「そのエージェントがその環境で積んだ実績」であり、別のエージェントにコピーすべきでない。
-
-### 5.4 ポータビリティ操作
-
-| 操作 | 説明 |
-|------|------|
-| **Copy（Clone）** | Portable粒度で複製。Performanceは白紙スタート |
-| **Merge** | 2体の人格を加重結合し新しい人格を生成（非破壊操作） |
-| **Snapshot** | Full粒度で`personas/history/`に保存。5タスクごとに自動実行 |
-| **Restore** | スナップショットからPersonaを復元 |
-| **Library** | `personas/library/`にテンプレート/スナップショットを蓄積 |
 
 ---
 
@@ -612,51 +487,41 @@ graph LR
     TC --> KD_ops
 ```
 
-**統合のメカニズム**:
+**統合のメカニズム**（signal → distill → inject の 3 フェーズ）:
 
-1. **タスク完了時**（毎回）: role YAML更新 + Learned Patterns登録
-2. **成功パターン検出時**: 特性のreinforcement + 共有知識に追加
-3. **失敗検出時**: 特性のcorrection + anti_pattern追加 + ネガティブ事例登録
-4. **月次蒸留イベント**: トップパフォーマーのパターン蒸留 + 世代別GC
+1. **Signal Detection**（タスク完了ごと）: `worker.completed` から quality/domain 等のシグナルを抽出し `knowledge/signals/` に蓄積
+2. **Pattern Distillation**（N≥K 条件成立時）: 同一ドメインのシグナルが閾値を超えたら LLM で汎化パターンを抽出し `knowledge/learned/` に保存
+3. **Silent Injection**（Worker 起動時）: 該当ドメインの Learned Patterns を Worker プロンプトに自動注入（`inject.py`）
 
 ### 6.2 Learned Patterns
 
-成功事例を自動蓄積し、Workerに注入する共有知識ベース。
+成功・失敗パターンを自動蓄積し、Worker に注入する共有知識ベース。
 
 ```
-knowledge/learned_patterns/
+knowledge/learned/
 ├── backend/
-│   ├── task042_migration_success.md
-│   └── task067_index_optimization.md
+│   ├── approach_001.yaml
+│   └── avoid_001.yaml
 ├── testing/
-│   └── task055_e2e_pattern.md
-└── frontend/
-    └── task030_component_design.md
+│   └── approach_001.yaml
+└── api_design/
+    └── decompose_001.yaml
 ```
 
-- **自動登録条件**: status=success かつ quality=GREEN
-- **ドメインあたり上限**: config.yamlで設定（デフォルト100件）
-- **Worker注入**: Decomposerがサブタスクのドメインに基づき関連 Learned Patterns を選択し、Workerテンプレートに注入
+- **蒸留条件**: 同一ドメインのシグナル N≥K（デフォルト K=5）
+- **パターン種別**: approach / avoid / decompose / tooling
+- **Worker注入**: `inject.py` が execute.requested 時に該当ドメインのパターンを選択し、Worker プロンプトに追加
 
 ### 6.3 知識蒸留フロー（distill）
 
-`evolve.sh` が実行する5段階の蒸留ステップ:
+`distill.py` が実行する蒸留ステップ:
 
-| # | ステップ | 対象 | 説明 |
-|---|---------|------|------|
-| 1 | パフォーマンス更新 | `performance` | `total_tasks`, `success_rate`, `last_task_date` を更新 |
-| 2 | 失敗補正 | `knowledge.domains` | 失敗ドメインの `proficiency` を -0.02 調整 |
-| 3 | 行動パラメータ調整 | `behavior` | GREEN/RED品質に基づき `risk_tolerance` を微調整 |
-| 4 | 自動スナップショット | `personas/history/` | `total_tasks` が5の倍数で保存 |
-| 5 | Learned Patterns 自動登録 | `knowledge/learned_patterns/` | GREEN+success を登録 |
-
-### 6.4 知識蓄積の速度（目安）
-
-| フェーズ | タスク数 | 期待される変化 |
-|---------|---------|-------------|
-| 蓄積期 | 0-50 | ドメイン習熟度に差が出始める |
-| 特化期 | 50-200 | specialization_index 0.5超のエージェントが出現 |
-| 安定期 | 200+ | 各エージェントのニッチが確立。蒸留が主な知識成長源 |
+| # | ステップ | 処理 |
+|---|---------|------|
+| 1 | Signal Accumulation | `worker.completed` → `knowledge/signals/{domain}/signal_*.yaml` に書き出し |
+| 2 | Distillation Trigger | 同一ドメインのシグナル数 N ≥ K を検知 |
+| 3 | Pattern Extraction | LLM ベースで汎化パターンを抽出（具体情報を除去） |
+| 4 | Pattern Storage | `knowledge/learned/{domain}/{type}_*.yaml` に書き出し |
 
 ---
 
@@ -722,12 +587,9 @@ tanebi:
   # === パス設定 ===
   paths:
     work_dir: "work"
-    persona_dir: "personas/active"
-    library_dir: "personas/library"
-    history_dir: "personas/history"
     knowledge_dir: "knowledge"
-    learned_patterns_dir: "knowledge/learned_patterns"
-    episode_dir: "knowledge/episodes"
+    signals_dir: "knowledge/signals"
+    learned_dir: "knowledge/learned"
 
   # === 実行設定 ===
   execution:
@@ -737,8 +599,18 @@ tanebi:
 
   # === Learning Engine 設定 ===
   learning:
-    learned_patterns_max_per_domain: 100
-    snapshot_interval: 5
+    signal:
+      auto_detect: true
+      retention_days: 90
+    distillation:
+      min_signals: 5
+      min_confidence: 0.6
+      auto_trigger: true
+    injection:
+      max_approach: 5
+      max_avoid: 3
+      max_decompose: 2
+      max_tooling: 2
 ```
 
 ---
@@ -750,25 +622,17 @@ tanebi/
 ├── CLAUDE.md                       # claude-native 用フロー決定ロジック
 ├── config.yaml                     # 全体設定
 │
-├── personas/
-│   ├── active/                     # アクティブPersona
-│   │   ├── generalist_v1.yaml
-│   │   └── backend_specialist_v2.yaml
-│   ├── library/                    # テンプレート・スナップショット
-│   │   └── seeds/
-│   │       ├── backend_seed.yaml
-│   │       ├── frontend_seed.yaml
-│   │       ├── testing_seed.yaml
-│   │       ├── docs_seed.yaml
-│   │       └── devops_seed.yaml
-│   └── history/                    # 自動スナップショット
-│
 ├── knowledge/
-│   ├── learned_patterns/           # 蒸留済み成功パターン
-│   │   ├── backend/
-│   │   ├── frontend/
-│   │   └── testing/
-│   └── episodes/                   # エピソード記録
+│   ├── signals/                    # シグナル蓄積（生データ）
+│   │   ├── coding/
+│   │   ├── testing/
+│   │   └── api_design/
+│   ├── learned/                    # 蒸留済みパターン
+│   │   ├── coding/
+│   │   ├── testing/
+│   │   └── api_design/
+│   └── _meta/                      # メタデータ
+│       └── distill_log.yaml
 │
 ├── work/                           # タスク作業ディレクトリ（EventStore が管理）
 │   ├── cmd_001/
@@ -784,7 +648,7 @@ tanebi/
 │   └── index.yaml                  # タスクインデックス（EventStore が自動管理）
 │
 ├── events/
-│   └── schema.yaml                 # イベントスキーマ定義（11種）
+│   └── schema.yaml                 # イベントスキーマ定義
 │
 ├── templates/                      # Decomposer/Worker/Aggregator テンプレート
 │   ├── decomposer.md
@@ -795,10 +659,6 @@ tanebi/
 │   ├── command_executor.sh         # Executor リファレンス実装（subprocess向け）
 │   ├── subprocess_worker.sh        # subprocess用 Decomposer/Worker ブリッジ
 │   ├── tanebi-callback.sh          # Inbound Callbackスクリプト
-│   ├── evolve.sh                   # Learning Engine 実行（Core層）
-│   ├── _evolve_helper.py           # 進化ヘルパー
-│   ├── _fitness.py                 # 適応度関数
-│   ├── persona_ops.sh              # Persona操作（clone/merge）
 │   ├── emit_event.sh               # イベント発火（Event Store 書き込み）
 │   └── tanebi_config.sh            # パス定数
 │
