@@ -509,44 +509,9 @@ paths:
 
 ---
 
-## 8. role 定義
+## 8. 旧設計（ペルソナ進化）との差分まとめ
 
-### 8.1 Persona を置き換える軽量 role.yaml の設計方針
-
-旧 Persona YAML は 4 層・200 行規模の重厚なモデルだった。
-新しい role.yaml は**必要最小限のメタデータ**のみを定義する。
-
-#### 設計方針
-
-| 方針 | 説明 |
-|------|------|
-| **知識を外に出す** | ドメイン知識は `knowledge/learned/` に。role が持つ必要はない |
-| **実績を外に出す** | パフォーマンス実績は `routing_scores.yaml` に。role が持つ必要はない |
-| **行動を捨てる** | behavior パラメータは LLM に無効。削除 |
-| **ID と役割だけ** | Worker を識別し、どのモデルを使うかだけ定義すれば十分 |
-
-### 8.2 role.yaml スキーマ
-
-```yaml
-# roles/worker_1.yaml
-role:
-  id: "worker_1"
-  base_model: "claude-sonnet-4-6"
-  description: "汎用 Worker。全ドメイン対応。"
-  preferred_domains:       # ルーティングの補助ヒント（任意）
-    - coding
-    - testing
-  created_at: "2026-02-24"
-```
-
-旧 Persona YAML（~200 行）に対して、role.yaml は **~10 行**で済む。
-
-
----
-
-## 9. 旧設計（ペルソナ進化）との差分まとめ
-
-### 9.1 廃止される機能
+### 8.1 廃止される機能
 
 | 機能 | 旧 | 新 | 理由 |
 |------|-----|-----|------|
@@ -558,7 +523,7 @@ role:
 | PersonaStore Protocol | KVS インターフェース | 大幅縮小 | role.yaml の読み書きのみ |
 | `evolve.sh` 6 段階ステップ | パフォーマンス更新→失敗補正→行動調整→適応度計算→スナップショット→Few-Shot | `distill()` 1 ステップ | シグナル蒸留のみが有効 |
 
-### 9.2 存続・進化する機能
+### 8.2 存続・進化する機能
 
 | 機能 | 旧 | 新 | 変更点 |
 |------|-----|-----|--------|
@@ -568,7 +533,7 @@ role:
 | フロー制御 | 変更なし | DISTILL ステップ追加 | AGGREGATE 後に DISTILL ステップ |
 | config.yaml | evolution セクション | learning セクション | パラメータ名変更 |
 
-### 9.3 新規追加される機能
+### 8.3 新規追加される機能
 
 | 機能 | 説明 |
 |------|------|
@@ -580,17 +545,16 @@ role:
 
 ---
 
-## 10. 移行方針
+## 9. 移行方針
 
-### 10.1 既存 personas/ ディレクトリの扱い
+### 9.1 既存 personas/ ディレクトリの扱い
 
 | 段階 | 作業 | 影響 |
 |------|------|------|
 | Phase 1 | `personas/active/*.yaml` から `knowledge` 層の `few_shot_refs`, `anti_patterns` を `knowledge/learned/` に移行 | Persona YAML はそのまま残る |
-| Phase 2 | `personas/active/*.yaml` を `roles/*.yaml` に縮小変換 | behavior, performance, evolution 層を削除 |
-| Phase 3 | `personas/` ディレクトリを `roles/` にリネーム。旧ディレクトリを削除 | PersonaStore → 廃止 |
+| Phase 2 | `personas/` ディレクトリを削除。PersonaStore → 廃止 | behavior, performance, evolution 層を削除 |
 
-### 10.2 コード変更ロードマップ
+### 9.2 コード変更ロードマップ
 
 #### Wave 1: 知識基盤の構築（Breaking change なし）
 
@@ -617,11 +581,10 @@ role:
 12. `evolve.py` の処理を `signal.py` + `distill.py` に分散完了
 13. `fitness.py` のルーティング以外の機能を削除
 14. `persona_ops.py` の Copy/Merge/Snapshot 機能を削除
-15. Persona YAML → role.yaml への変換スクリプトの作成と実行
-16. config.yaml の `evolution` → `learning` セクション移行
-17. テストの更新（旧 test_evolve.py → test_distill.py, test_signal.py）
+15. config.yaml の `evolution` → `learning` セクション移行
+16. テストの更新（旧 test_evolve.py → test_distill.py, test_signal.py）
 
-### 10.3 後方互換性
+### 9.3 後方互換性
 
 - Wave 1-3 は**非破壊的**。旧 Persona 機構と新 Learning Engine が並行稼働可能
 - Wave 4 で旧機構を廃止。この時点で breaking change が発生
@@ -629,9 +592,9 @@ role:
 
 ---
 
-## 11. 設計の制約と今後の課題
+## 10. 設計の制約と今後の課題
 
-### 11.1 現時点の制約
+### 10.1 現時点の制約
 
 | 制約 | 説明 | 対処方針 |
 |------|------|---------|
@@ -641,7 +604,7 @@ role:
 | **パターンの陳腐化** | 技術や要件の変化により過去のパターンが無効になる場合がある | パターンに `distilled_at` を記録し、一定期間経過後に再検証する仕組みを将来導入 |
 | **注入量の最適化** | 注入パターンが多すぎるとコンテキスト圧迫、少なすぎると効果薄 | config.yaml で上限を設定し、confidence 順で上位のみ注入 |
 
-### 11.2 今後の課題
+### 10.2 今後の課題
 
 #### 短期（Wave 1-3 完了後）
 
@@ -663,7 +626,7 @@ role:
 - **Learning Effectiveness Dashboard**: 学習の効果をシステム全体で可視化するダッシュボード
 - **Federated Learning**: 複数の TANEBI インスタンス間でのパターン共有（組織レベルの知識蓄積）
 
-### 11.3 設計上の意図的な制約
+### 10.3 設計上の意図的な制約
 
 以下は意図的に設計に含めていない機能である:
 

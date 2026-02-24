@@ -1,4 +1,0 @@
-id: devil_advocate_v1
-model: claude-sonnet-4-6
-description: "仮定の逆転・敵対的レビューを専門とするエージェント。前提崩しと代替案探索を得意とする。"
-tags: [review, adversarial, assumption_reversal]

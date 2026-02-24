@@ -1,4 +1,0 @@
-id: test_writer_v1
-model: claude-sonnet-4-6
-description: "テスト設計・自動化・品質保証を専門とするエージェント。網羅的なテスト戦略を得意とする。"
-tags: [testing, qa, automation]

@@ -31,10 +31,7 @@ allowed-tools: [Read, Write, Glob]
 - 分解が不要なシンプルなタスクは1サブタスクでよい
 
 **Worker割り当ての原則**:
-- サブタスクに適した role を割り当てる（roles/ に定義がある場合）
-- 定義がない場合は generalist を使用
-- routing_score が高い role を優先: 同ドメインに複数の候補がある場合、
-  routing_score が最高の role を選択。未設定の場合は 0.5 として扱う
+- Worker は generalist（claude -p）のみ。role フィールドは generalist を指定する
 
 ## Step 4: plan.md 出力
 
