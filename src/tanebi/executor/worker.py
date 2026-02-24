@@ -29,6 +29,8 @@ def run_claude_p(
     model: str | None = None,
     timeout: int | None = None,
     allowed_tools: str = "Read,Write,Glob,Grep,Bash",
+    domain: str | None = None,
+    knowledge_dir: Path | None = None,
 ) -> str:
     """claude -p をサブプロセスで実行し、stdout を返す。
 
@@ -44,6 +46,16 @@ def run_claude_p(
     timeout = timeout or exec_cfg.get("timeout", 300)
 
     env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
+
+    # Silent injection: load Learned Patterns if domain is specified
+    if domain and knowledge_dir:
+        try:
+            from tanebi.core.inject import load_patterns, build_injection_section, inject_into_system_prompt
+            patterns = load_patterns(domain, knowledge_dir)
+            injection_text = build_injection_section(patterns)
+            system_prompt = inject_into_system_prompt(system_prompt, injection_text)
+        except Exception:
+            pass  # 注入失敗でも Worker は正常動作する
 
     cmd = [
         "claude", "-p",

@@ -10,11 +10,10 @@ Learned Patterns を参照しながらタスクを実行し、結果を指定フ
 
 ## Learned Patterns（知識ベース）
 
-以下の Learned Patterns があれば参照してください（なければスキップ）:
+<!-- LEARNED_PATTERNS_SECTION -->
 
-**Learned Patterns パス**: `{LEARNED_PATTERNS_PATHS}`
-
-関連するパターンを読み、成功アプローチと回避パターンをタスク実行に活かしてください。
+※ 上記パターンは Learning Engine により自動注入されます。
+　 パターンがない場合（Cold Start）はこのセクションを無視してください。
 
 ## タスク
 
