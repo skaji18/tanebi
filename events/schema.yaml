@@ -133,3 +133,42 @@ events:
       timestamp:
         type: string  # ISO 8601
         required: true
+
+  # Learning Engine Events
+  distill.requested:
+    description: "蒸留処理の開始リクエスト"
+    payload:
+      task_id:
+        type: string
+        required: true
+      domain:
+        type: string
+        required: true
+      signal_count:
+        type: integer
+        required: true
+      signal_ids:
+        type: array
+        required: true
+      timestamp:
+        type: string
+        required: true
+
+  distill.completed:
+    description: "蒸留処理の完了通知"
+    payload:
+      task_id:
+        type: string
+        required: true
+      domain:
+        type: string
+        required: true
+      patterns_created:
+        type: array
+        required: true
+      confidence:
+        type: number
+        required: true
+      timestamp:
+        type: string
+        required: true
