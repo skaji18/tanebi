@@ -17,7 +17,7 @@ def test_tanebi_help():
 
 
 def test_tanebi_subcommands_registered():
-    """listener / new / persona / status / config サブコマンドが --help に表示されることを確認。"""
+    """listener / new / emit / status / config サブコマンドが --help に表示されることを確認。"""
     result = subprocess.run(
         [sys.executable, "-m", "tanebi.cli.main", "--help"],
         capture_output=True,
@@ -26,7 +26,7 @@ def test_tanebi_subcommands_registered():
     assert result.returncode == 0
     assert "listener" in result.stdout
     assert "new" in result.stdout
-    assert "persona" in result.stdout
+    assert "emit" in result.stdout
     assert "status" in result.stdout
     assert "config" in result.stdout
 

@@ -2,8 +2,6 @@
 import argparse
 import sys
 from tanebi.cli.listener_cmd import add_listener_parser, add_new_parser
-from tanebi.cli.persona_cmd import add_persona_parser
-from tanebi.cli.evolve_cmd import add_evolve_parser
 from tanebi.cli.emit_cmd import add_emit_parser
 
 
@@ -16,8 +14,6 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command")
     add_listener_parser(subparsers)
     add_new_parser(subparsers)
-    add_persona_parser(subparsers)
-    add_evolve_parser(subparsers)
     add_emit_parser(subparsers)
 
     # status [<task_id>]

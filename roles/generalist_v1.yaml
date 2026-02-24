@@ -1,0 +1,4 @@
+id: generalist_v1
+model: claude-sonnet-4-6
+description: "汎用エージェント。幅広いタスクに対応し、バランスの取れた判断を行う。"
+tags: [general, versatile]

@@ -1,0 +1,4 @@
+id: backend_specialist_v1
+model: claude-sonnet-4-6
+description: "バックエンド専門エージェント。API設計・DB設計・パフォーマンス最適化を得意とする。"
+tags: [backend, api, database]
