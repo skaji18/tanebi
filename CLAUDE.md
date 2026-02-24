@@ -7,6 +7,11 @@
 
 claude-native アダプター（MVP）: `git clone → cd tanebi → claude` で起動。tmux不要、追加インフラ不要。
 
+## Python 実行環境
+- python3コマンドの直接実行禁止
+- venv有効化: `source .venv/bin/activate`
+- tanebi CLI実行: `.venv/bin/python -m tanebi <コマンド>` または venv有効化後に `tanebi <コマンド>`
+
 ## アーキテクチャ概要
 
 TANEBIは **Core**・**Event Store**・**Executor** の三者に分離される。
