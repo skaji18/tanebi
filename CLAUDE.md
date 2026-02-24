@@ -90,8 +90,9 @@ Python実装の対応表:
 | タスク初期化 | `tanebi.event_store.create_task()` | |
 | Worker→Core通知 | `tanebi.core.callback.handle_callback()` | |
 | 設定読み込み | `tanebi.config` | ← tanebi.core.config から変更 |
-| Learning Engine | `tanebi.core.evolve` | ← 旧: 進化エンジン |
-| routing_score計算 | `tanebi.core.fitness` | ← 旧: 適応度計算 |
+| シグナル検出・蓄積 | `tanebi.core.signal` | |
+| パターン蒸留 | `tanebi.core.distill` | |
+| パターン注入 | `tanebi.core.inject` | |
 
 ## 参考ドキュメント
 

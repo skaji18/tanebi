@@ -47,7 +47,7 @@ plan:
   subtasks:
     - id: subtask_001
       description: "具体的なタスク内容"
-      role: generalist           # ← persona → role に変更
+      role: generalist
       output_path: "work/{CMD_ID}/results/subtask_001.md"
       depends_on: []
       wave: 1
@@ -86,7 +86,7 @@ description: Review all subtask results and determine pass/fail verdict.
 
 When `round >= 2` (re-decompose due to checkpoint fail):
 - Read `checkpoint_feedback` in the decompose.requested payload
-- For `attribution: execution` failures: assign the same subtask to a different persona
+- For `attribution: execution` failures: assign the same subtask to a different role
   or add more specific acceptance criteria
 - For `attribution: input` failures: clarify the subtask specification
 - Include a note in each subtask describing what failed in the previous round

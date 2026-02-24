@@ -14,7 +14,7 @@ allowed-tools: [Read, Write, Glob]
 
 各ファイルのYAML frontmatterから以下を取得:
 - subtask_id: サブタスクID
-- persona: 担当Persona名
+- role: 担当role名
 - status: success / failure
 - quality: GREEN / YELLOW / RED
 - domain: タスクのドメイン分類

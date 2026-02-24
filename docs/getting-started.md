@@ -24,7 +24,6 @@ bash scripts/setup.sh
 このスクリプトが行うこと:
 
 - Python venv を `.venv/` に作成してパッケージをインストール
-- `personas/active/` にスターター Persona を初期配置
 - `work/`, `knowledge/` などのランタイムディレクトリを作成
 
 冪等（2回以上実行しても安全）。
@@ -47,17 +46,17 @@ claude
 
 起動後、オーケストレーターが以下を表示する:
 
-- 利用可能な Persona 数（`personas/active/`）
+- 蓄積済み Learned Patterns 数（`knowledge/learned/`）
 - 過去のコマンド数（`work/`）
 - タスク入力の案内
 
 タスクを入力するとフローが始まる:
 
 1. **REQUEST** — `work/cmd_NNN/request.md` に依頼を保存
-2. **DECOMPOSE** — Decomposer がサブタスクに分解、Persona を選択
+2. **DECOMPOSE** — Decomposer がサブタスクに分解
 3. **EXECUTE** — Worker がサブタスクを実行、Event Store に結果を記録
 4. **AGGREGATE** — 結果を統合してレポートを生成
-5. **EVOLVE** — Persona と共有知識を更新
+5. **LEARN** — シグナル蓄積・蒸留・パターン注入で知識を更新
 
 実行結果は `work/cmd_NNN/` に蓄積される。
 
@@ -70,7 +69,7 @@ Event Store (work/{cmd}/events/)   ←→   Executor (subprocess_worker)
   ↑ *.completed
 ```
 
-- **Core** — Evolution Engine + Persona 管理 + フロー制御。Executor を知らない
+- **Core** — Learning Engine + Knowledge Store + フロー制御。Executor を知らない
 - **Event Store** — 不変イベントログ。Core と Executor の唯一の通信経路
 - **Executor** — `*.requested` を処理して `*.completed` を返す。実装技術は自由
 
@@ -78,5 +77,5 @@ Event Store (work/{cmd}/events/)   ←→   Executor (subprocess_worker)
 
 ## Next Steps
 
-- **[design.md](design.md)** — アーキテクチャ全仕様、Persona スキーマ、Evolution Engine
+- **[design.md](design.md)** — アーキテクチャ全仕様、Learning Engine
 - **[executor-design.md](executor-design.md)** — 独自 Executor の実装方法

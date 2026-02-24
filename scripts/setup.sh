@@ -57,32 +57,14 @@ else
     echo "[setup] config.yaml already exists (skipped)."
 fi
 
-# === 6. Seed Persona 初期化 ===
-TEMPLATES_DIR="$TANEBI_ROOT/personas/library/templates"
-ACTIVE_DIR="$TANEBI_ROOT/personas/active"
-
-mkdir -p "$ACTIVE_DIR"
-
-copied=0
-for seed in "$TEMPLATES_DIR"/*_seed.yaml; do
-    [ -f "$seed" ] || continue
-    base=$(basename "$seed" _seed.yaml)
-    target="$ACTIVE_DIR/${base}_v1.yaml"
-    if [ ! -f "$target" ]; then
-        cp "$seed" "$target"
-        echo "[setup] Created persona: $target"
-        copied=$((copied + 1))
-    else
-        echo "[setup] Already exists: $target (skipped)"
-    fi
-done
-
-# === 7. ランタイムディレクトリ確認・作成 ===
+# === 6. ランタイムディレクトリ確認・作成 ===
 echo "[setup] Ensuring runtime directories..."
 mkdir -p "$TANEBI_ROOT/work"
+mkdir -p "$TANEBI_ROOT/knowledge/signals"
+mkdir -p "$TANEBI_ROOT/knowledge/learned"
 mkdir -p "$TANEBI_ROOT/knowledge/episodes"
 mkdir -p "$TANEBI_ROOT/knowledge/few_shot_bank"
-mkdir -p "$TANEBI_ROOT/personas/history"
+mkdir -p "$TANEBI_ROOT/knowledge/_meta"
 echo "[setup] Runtime directories OK."
 
 # === 8. 動作確認 ===
@@ -91,5 +73,5 @@ echo "[setup] Verifying tanebi installation..."
 echo "[setup] tanebi CLI OK."
 
 echo ""
-echo "[setup] Done. $copied persona(s) initialized."
+echo "[setup] Done."
 echo "Setup complete! Run 'source .venv/bin/activate' to activate the environment."
