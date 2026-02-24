@@ -113,8 +113,6 @@ Aggregator完了後、Learning Engine を実行する。
 3. **Distillation**（N≥K ルール）: 同一ドメインでK件以上のシグナルが収束したら
    汎化パターンに蒸留 → `knowledge/learned/{domain}/`
 
-4. **routing_score 更新**: タスク割り当て用スコアを更新
-   （学習とは独立した指標。適応度の概念は廃止）
 
 ## Learned Patterns の確認方法
 
