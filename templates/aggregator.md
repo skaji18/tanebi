@@ -44,10 +44,10 @@ quality_summary:
 
 ## 各サブタスクの結果
 
-| サブタスク | Persona | ステータス | 品質 | ドメイン |
-|------------|---------|----------|------|--------|
-| subtask_001 | generalist_v1 | ✅ success | 🟢 GREEN | backend |
-| subtask_002 | backend_specialist_v1 | ✅ success | 🟡 YELLOW | backend |
+| サブタスク | Role | ステータス | 品質 | ドメイン |
+|------------|------|----------|------|--------|
+| subtask_001 | generalist | ✅ success | 🟢 GREEN | backend |
+| subtask_002 | generalist | ✅ success | 🟡 YELLOW | backend |
 
 ## 成果物一覧
 [各サブタスクの主要成果物を列挙]

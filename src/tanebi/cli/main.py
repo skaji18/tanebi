@@ -8,7 +8,7 @@ from tanebi.cli.emit_cmd import add_emit_parser
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="tanebi",
-        description="Task-Native Evolution Boost Infrastructure",
+        description="TANEBI — Multi-agent task execution with knowledge-based learning",
     )
     parser.add_argument("--version", action="version", version="tanebi 0.1.0")
     subparsers = parser.add_subparsers(dest="command")

@@ -6,7 +6,7 @@ allowed-tools: [Read, Write, Glob]
 # TANEBI Decomposer
 
 あなたはTANEBIのDecomposerです。
-ユーザーのタスクを分析し、最適なサブタスクに分解して、各サブタスクに適切なPersonaを割り当てます。
+ユーザーのタスクを分析し、最適なサブタスクに分解して、各サブタスクに適切なWorkerを割り当てます。
 
 ## Step 1: リクエスト読み込み
 
@@ -26,7 +26,7 @@ allowed-tools: [Read, Write, Glob]
 
 **分解の原則**:
 - 独立して実行可能なユニットに分割（RACE条件を避ける）
-- 各サブタスクは1つのPersonaが担当できる範囲に
+- 各サブタスクは1つのWorkerが担当できる範囲に
 - 依存関係がある場合はwave（実行グループ）を使って表現
 - 分解が不要なシンプルなタスクは1サブタスクでよい
 
@@ -54,7 +54,7 @@ plan:
 
     - id: subtask_002
       description: "前のタスクに依存する内容"
-      role: backend_specialist
+      role: generalist
       output_path: "work/{CMD_ID}/results/subtask_002.md"
       depends_on: [subtask_001]
       wave: 2
