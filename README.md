@@ -30,10 +30,28 @@ In conventional multi-agent systems, agents are disposable: their memory resets 
 git clone https://github.com/skaji18/tanebi
 cd tanebi
 bash scripts/setup.sh
+source .venv/bin/activate
+export ANTHROPIC_API_KEY=your_api_key_here  # https://console.anthropic.com/
 claude
 ```
 
-`setup.sh` installs the Python package and initializes seed Personas. `CLAUDE.md` auto-loads and TANEBI starts as your orchestrator. No tmux, no process managers, no extra infrastructure -- just Claude Code.
+`setup.sh` installs the Python package and creates runtime directories. `CLAUDE.md` auto-loads and TANEBI starts as your orchestrator. No tmux, no process managers, no extra infrastructure -- just Claude Code.
+
+Verify the installation before running `claude`:
+
+```bash
+tanebi --version   # tanebi 0.1.0
+```
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `tanebi new` | Submit a new task |
+| `tanebi status` | Show task status |
+| `tanebi listener` | Manage the listener process |
+| `tanebi emit` | Emit an event to the Event Store |
+| `tanebi config` | Show current configuration |
 
 ## Architecture
 

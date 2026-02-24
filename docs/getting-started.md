@@ -3,7 +3,8 @@
 ## Prerequisites
 
 - **Python 3.10+** — `python3 --version` で確認
-- **Claude Code** — `claude --version` で確認
+- **Claude Code** — `claude --version` で確認 ([Install](https://claude.ai/code))
+- **Anthropic API Key** — `export ANTHROPIC_API_KEY=your_api_key_here` で設定 ([取得はこちら](https://console.anthropic.com/))
 - **Git**
 
 ## Installation
@@ -33,6 +34,7 @@ bash scripts/setup.sh
 ```bash
 source .venv/bin/activate
 tanebi --version   # tanebi 0.1.0
+export ANTHROPIC_API_KEY=your_api_key_here  # まだ設定していない場合
 ```
 
 ## Your First Task

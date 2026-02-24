@@ -6,19 +6,19 @@ tanebi:
 
   # === パス設定 ===
   paths:
-    work_dir: "work"
-    knowledge_dir: "knowledge"
-    signals_dir: "knowledge/signals"
-    learned_dir: "knowledge/learned"
-    episode_dir: "knowledge/episodes"
+    work_dir: "work"                      # タスクワークスペース（work/cmd_NNN/）
+    knowledge_dir: "knowledge"            # 知識ベースルートディレクトリ
+    signals_dir: "knowledge/signals"      # 生シグナル蓄積（タスク完了後に書き込まれる）
+    learned_dir: "knowledge/learned"      # 蒸留済みパターン（蒸留エンジンが生成）
+    episode_dir: "knowledge/episodes"     # エピソードメモリ
 
   # === 実行設定 ===
   execution:
-    max_parallel_workers: 5
-    worker_max_turns: 30
-    default_model: "claude-sonnet-4-6"
-    claude_native: true
-    timeout: 300
+    max_parallel_workers: 5               # 並列実行するワーカーの最大数
+    worker_max_turns: 30                  # ワーカー1タスクあたりの最大ターン数（超過すると強制終了）
+    default_model: "claude-sonnet-4-6"    # 使用する Claude モデル ID
+    claude_native: true                   # true = Claude Code subprocess モード / false = Anthropic API モード
+    timeout: 300                          # ワーカータイムアウト（秒）
 
   # === 学習エンジン設定 ===
   learning:
