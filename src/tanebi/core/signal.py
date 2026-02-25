@@ -47,8 +47,8 @@ def detect_signal(event: dict) -> Optional[dict]:
 
     elif event_type == "checkpoint.completed":
         verdict = payload.get("verdict", "")
-        quality = "GREEN" if verdict == "PASS" else "RED"
-        status = "success" if verdict == "PASS" else "failure"
+        quality = "GREEN" if verdict.lower() == "pass" else "RED"
+        status = "success" if verdict.lower() == "pass" else "failure"
         signal_type, weight = "checkpoint_feedback", 1.0
         return {
             "domain": payload.get("domain", "general"),

@@ -122,6 +122,65 @@ class TestDetectSignal:
         assert signal["signal_type"] == "checkpoint_feedback"
         assert signal["quality"] == "RED"
 
+    def test_checkpoint_completed_lowercase_pass_is_green(self):
+        """flow.py が emit する小文字 'pass' が GREEN シグナルになることを確認。"""
+        event = {
+            "type": "checkpoint.completed",
+            "payload": {
+                "domain": "coding",
+                "task_id": "cmd_077",
+                "subtask_id": "subtask_077a",
+                "verdict": "pass",
+                "attribution": "execution",
+                "round": 1,
+                "summary": "Checkpoint passed (lowercase verdict)",
+            }
+        }
+        signal = detect_signal(event)
+        assert signal is not None
+        assert signal["signal_type"] == "checkpoint_feedback"
+        assert signal["quality"] == "GREEN"
+        assert signal["status"] == "success"
+
+    def test_checkpoint_completed_lowercase_fail_is_red(self):
+        """flow.py が emit する小文字 'fail' が RED シグナルになることを確認。"""
+        event = {
+            "type": "checkpoint.completed",
+            "payload": {
+                "domain": "coding",
+                "task_id": "cmd_077",
+                "subtask_id": "subtask_077b",
+                "verdict": "fail",
+                "attribution": "input",
+                "round": 1,
+                "summary": "Checkpoint failed (lowercase verdict)",
+            }
+        }
+        signal = detect_signal(event)
+        assert signal is not None
+        assert signal["signal_type"] == "checkpoint_feedback"
+        assert signal["quality"] == "RED"
+        assert signal["status"] == "failure"
+
+    def test_checkpoint_completed_uppercase_pass_is_green(self):
+        """大文字 'PASS' も GREEN シグナルになることを確認（後方互換）。"""
+        event = {
+            "type": "checkpoint.completed",
+            "payload": {
+                "domain": "coding",
+                "task_id": "cmd_077",
+                "subtask_id": "subtask_077c",
+                "verdict": "PASS",
+                "attribution": "execution",
+                "round": 1,
+                "summary": "Checkpoint passed (uppercase verdict)",
+            }
+        }
+        signal = detect_signal(event)
+        assert signal is not None
+        assert signal["quality"] == "GREEN"
+        assert signal["status"] == "success"
+
     def test_unknown_event_returns_none(self):
         event = {"type": "execute.requested", "payload": {}}
         result = detect_signal(event)
