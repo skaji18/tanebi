@@ -1,5 +1,5 @@
 # TANEBI Event Schema Definition
-# 全13種のイベントスキーマ定義
+# 全15種のイベントスキーマ定義
 # See: docs/design.md Section 4.2
 
 events:
@@ -11,7 +11,7 @@ events:
       task_id:
         type: string
         required: true
-      request:
+      request_summary:
         type: string
         required: true
       timestamp:
@@ -24,50 +24,51 @@ events:
     description: "CoreがDecomposeを依頼するイベント"
     direction: "Core → Event Store（Executor読取）"
     payload:
-      cmd_dir: string  # 作業ディレクトリのパス
-      request_file: string  # リクエストファイルのパス
-      persona_file: string  # ペルソナファイルのパス
+      task_id: string
+      request_path: string      # work/{task_id}/request.md
+      plan_output_path: string  # work/{task_id}/plan.md
+      timestamp: string
 
   execute.requested:
     description: "CoreがWorker実行を依頼するイベント"
     direction: "Core → Event Store（Executor読取）"
     payload:
-      cmd_dir: string
-      subtask_id: string  # サブタスクID
-      request_file: string
-      persona_file: string
-      wave: integer  # Waveナンバー
+      task_id: string
+      subtask_id: string
+      subtask_description: string  # サブタスクの説明
+      wave: integer
+      timestamp: string
 
   aggregate.requested:
     description: "CoreがAggregateを依頼するイベント"
     direction: "Core → Event Store（Executor読取）"
     payload:
-      cmd_dir: string
-      persona_file: string
+      task_id: string
+      results_dir: string       # work/{task_id}/results/
+      report_path: string       # work/{task_id}/report.md
+      timestamp: string
 
   # ===== Executor → Core =====
 
   task.decomposed:
     description: "Decompose完了時"
     payload:
-      cmd_id: string
+      task_id: string
       plan:
         subtasks: array
         waves: integer
-        persona_assignments: array
 
   worker.started:
     description: "Worker起動時"
     payload:
-      cmd_id: string
+      task_id: string
       subtask_id: string
-      persona_id: string
       wave: integer
 
   worker.progress:
     description: "Worker中間出力時"
     payload:
-      cmd_id: string
+      task_id: string
       subtask_id: string
       message: string
       percent: "number?"  # optional
@@ -75,7 +76,7 @@ events:
   worker.completed:
     description: "Worker完了時"
     payload:
-      cmd_id: string
+      task_id: string
       subtask_id: string
       status: "enum[success, failure]"
       quality: "enum[GREEN, YELLOW, RED]"
@@ -86,16 +87,16 @@ events:
   wave.completed:
     description: "Wave内全Worker完了"
     payload:
-      cmd_id: string
+      task_id: string
       wave: integer
-      results_summary: string
+      results_summary: object
 
   task.aggregated:
     description: "Aggregator完了後"
     payload:
-      cmd_id: string
+      task_id: string
       report_path: string
-      quality_summary: string
+      quality_summary: object
 
   # ===== Checkpoint =====
 
@@ -104,8 +105,15 @@ events:
     direction: "Core → Event Store（Executor読取）"
     payload:
       task_id: string
+      subtask_id: string        # checkpoint subtask の ID
+      subtask_type: checkpoint  # ExecutorListener が分岐するためのフラグ
       round: integer
-      subtask_ids: array
+      wave: integer
+      request_path: string      # request.md のパス
+      plan_path: string         # plan.round{N}.md のパス
+      results_dir: string       # results/round{N}/ のパス
+      output_path: string       # checkpoint 結果の出力先
+      timestamp: string
 
   checkpoint.completed:
     description: "flow.py が checkpoint verdict 集約後に発火"
@@ -124,17 +132,15 @@ events:
       task_id:
         type: string
         required: true
-      worker_id:
-        type: string
-        required: false  # optional
-      error:
+      subtask_id:
         type: string
         required: true
-      timestamp:
-        type: string  # ISO 8601
+      error_detail:
+        type: string
         required: true
 
-  # Learning Engine Events
+  # ===== Learning Engine =====
+
   distill.requested:
     description: "蒸留処理の開始リクエスト"
     payload:

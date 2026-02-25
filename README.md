@@ -1,7 +1,7 @@
 <p align="center">
   <strong>TANEBI</strong><br/>
-  <em>Evolving Multi-Agent Persona Framework</em><br/>
-  <em>( 進化するマルチエージェント人格フレームワーク )</em>
+  <em>Knowledge-Accumulating Multi-Agent Task Execution Framework</em><br/>
+  <em>( 知識蓄積型マルチエージェントタスク実行フレームワーク )</em>
 </p>
 
 <p align="center">
@@ -12,9 +12,9 @@
 
 ---
 
-> **The spark that never dies** -- agents that grow with every task.
+> **The spark that never dies** -- agents that grow smarter with every task.
 
-In conventional multi-agent systems, agents are disposable: their memory resets every session, and the 100th task starts with the same capability as the first. **TANEBI** changes this by giving each agent a persistent **Persona** that evolves through task execution. Success patterns are reinforced, failure patterns are recorded, and the entire team becomes compoundingly smarter over time.
+In conventional multi-agent systems, agents are disposable: their knowledge resets every session, and the 100th task starts with the same capability as the first. **TANEBI** changes this by running a **Learning Engine** that accumulates knowledge from every task. Success patterns are distilled, failure patterns are recorded, and the entire team's workers automatically receive enriched context on the next run.
 
 ## Prerequisites
 
@@ -31,17 +31,12 @@ git clone https://github.com/skaji18/tanebi
 cd tanebi
 bash scripts/setup.sh
 source .venv/bin/activate
+tanebi --version   # tanebi 0.1.0
 export ANTHROPIC_API_KEY=your_api_key_here  # https://console.anthropic.com/
 claude
 ```
 
 `setup.sh` installs the Python package and creates runtime directories. `CLAUDE.md` auto-loads and TANEBI starts as your orchestrator. No tmux, no process managers, no extra infrastructure -- just Claude Code.
-
-Verify the installation before running `claude`:
-
-```bash
-tanebi --version   # tanebi 0.1.0
-```
 
 ## CLI Commands
 
@@ -55,30 +50,56 @@ tanebi --version   # tanebi 0.1.0
 
 ## Architecture
 
-TANEBI separates **Core** (Evolution Engine + Persona management + flow control) from **Executor** (task execution environment) via the **Event Store**. Core and Executor never interact directly -- all communication flows through the immutable event log.
+TANEBI separates **Core** (flow control + Learning Engine) from **Executor** (task execution) via the **Event Store**. Core and Executor never interact directly -- all communication flows through the immutable event log.
+
+```mermaid
+graph TD
+    User["User / Orchestrator"] -->|request.md| Tanebi["tanebi CLI"]
+    Tanebi -->|task.created| EventStore["EventStore\n(work/{task_id}/events/)"]
+    EventStore -->|decompose.requested| CL["CoreListener"]
+    CL -->|execute.requested| EL["ExecutorListener"]
+    EL -->|spawns| Worker["Claude Worker\n(subprocess)"]
+    Worker -->|worker.completed| EventStore
+    EventStore -->|checkpoint.requested| CL
+    CL -->|checkpoint.completed| LE["Learning Engine"]
+    LE -->|signal| Knowledge["knowledge/signals/"]
+    LE -->|distill| Learned["knowledge/learned/"]
+    Learned -->|inject| Worker
+    CL -->|aggregate.requested| EL
+    EL -->|task.aggregated| EventStore
+```
+
+**5-phase loop per task: DECOMPOSE → EXECUTE → [CHECKPOINT] → AGGREGATE → LEARN**. CHECKPOINT is optional. Each cycle feeds the Learning Engine, making future workers smarter.
+
+## Learning Engine
+
+The heart of TANEBI. After each checkpoint, the Learning Engine runs a three-wave pipeline that extracts knowledge from task outcomes and silently injects it into future workers.
 
 ```mermaid
 graph LR
-    subgraph Core ["Core (CLAUDE.md orchestrator)"]
-        O[Flow Control]
-        P[Persona Store]
-        E[Evolution Engine]
+    subgraph Wave1 ["Wave 1: Signal"]
+        W1["signal.py\ndetect & classify"]
     end
-    subgraph ES ["Event Store (work/{task_id}/events/)"]
-        EL[(Immutable event log)]
+    subgraph Wave2 ["Wave 2: Distill"]
+        W2["distill.py\npattern extraction"]
     end
-    subgraph EX ["Executor"]
-        CMD[command_executor.py]
-        WRK[subprocess_worker.py]
+    subgraph Wave3 ["Wave 3: Inject"]
+        W3["inject.py\nsilent injection"]
     end
-    O -- "*.requested" --> EL
-    EL -- "*.requested" --> CMD
-    CMD --> WRK
-    WRK -- "*.completed" --> EL
-    EL -- "*.completed" --> O
+    subgraph KB ["knowledge/"]
+        S["signals/\n(raw signals)"]
+        L["learned/\n(distilled patterns)"]
+    end
+
+    checkpoint.completed --> W1
+    W1 -->|accumulate| S
+    S -->|trigger distill| W2
+    W2 -->|write patterns| L
+    L --> W3
+    W3 -->|enriched prompt| NextWorker["Next Worker Run"]
 ```
 
-**4-phase loop per task (DECOMPOSE → EXECUTE → AGGREGATE → EVOLVE)**. Each cycle makes the team stronger.
+Workers are unaware of the injection — they simply receive enriched context as part of their normal prompt. Knowledge compounds automatically.
 
 ## Directory Structure
 
@@ -91,57 +112,45 @@ tanebi/
   src/
     tanebi/              # Python package
       cli/               # CLI entrypoint
-      core/              # Evolution engine, Persona Store, EventStore
-      executor/          # Executor reference implementation
-
-  personas/
-    active/              # Live Personas (YAML)
-    library/             # Starter templates (seeds/)
-    history/             # Auto-snapshots every 5 tasks
+      core/              # CoreListener, Learning Engine (signal/distill/inject), flow control
+      executor/          # ExecutorListener, subprocess worker
+      event_store/       # Immutable event log abstraction
 
   knowledge/
+    signals/             # Raw signals from worker/checkpoint events (per domain)
+    learned/             # Distilled patterns injected into workers (per domain)
     few_shot_bank/       # Successful examples by domain
     episodes/            # Episode memory
+    _meta/               # Metadata (distillation state, counters)
 
   work/                  # Task workspaces (work/cmd_001/, ...)
-  templates/             # Decomposer / Worker / Aggregator templates
-  scripts/               # Evolution engine & utility scripts
+  templates/             # Decomposer / Worker / Aggregator / Checkpoint templates
+  scripts/               # Utility scripts
   docs/                  # Design documents
 ```
 
-## Persona Evolution
-
-The heart of TANEBI. Every agent carries a **4-layer Persona**:
-
-| Layer | Contains | Changes |
-|-------|----------|---------|
-| **Identity** | Name, speech style, archetype | Monthly |
-| **Knowledge** | Domain proficiency, Few-Shot examples, anti-patterns | Every task |
-| **Behavior** | Risk tolerance, detail orientation, speed vs quality | Every few tasks |
-| **Performance** | Trust score, success rate, quality average, streaks | Every task |
-
-TANEBI runs **dual evolution**:
-
-- **Individual Evolution** -- Agent Personas evolve through selection, mutation, crossover, and fitness evaluation
-- **Knowledge Evolution** -- A shared Few-Shot Bank accumulates successful examples. New workers automatically receive relevant past successes
-
-The fitness function drives task-persona matching:
-
-```
-fitness = 0.35 * quality + 0.30 * completion + 0.20 * efficiency + 0.15 * growth
-```
-
-Agents that perform well get more tasks in their domain. Agents that struggle receive corrective feedback baked into their Persona. The team self-optimizes.
-
 ## Documentation
 
-- **[Design Document](docs/design.md)** -- Full architecture specification, Persona schema, Evolution Engine details, Store abstractions, and event-driven architecture
-- **[Executor Design](docs/executor-design.md)** -- Executor implementation guide
+| Document | Description |
+|----------|-------------|
+| **[Getting Started](docs/getting-started.md)** | Installation and first task walkthrough |
+| **[Design Document](docs/design.md)** | Full architecture specification, Learning Engine details, EventStore abstractions, and event-driven architecture |
+| **[Executor Design](docs/executor-design.md)** | Executor implementation guide |
 
-### 読者別ガイド
-- **TANEBIを使う方**: このREADME → `bash scripts/setup.sh` → docs/design.md
-- **Executorを実装する方**: docs/executor-design.md
-- **TANEBIコアに貢献する方**: docs/design.md
+### Reader's Guide
+- **New users**: README → docs/getting-started.md → docs/design.md
+- **Executor implementors**: docs/executor-design.md
+- **Core contributors**: docs/design.md
+
+### Task Input Examples
+
+After running `claude`, enter a task at the prompt:
+
+```
+> FizzBuzz を実装してください（1から100まで）
+> src/ 以下のユニットテストをすべて書いてください
+> README.md の誤字を修正してください
+```
 
 ## License
 

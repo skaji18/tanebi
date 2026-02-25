@@ -93,10 +93,18 @@ Python実装の対応表:
 | イベント発火 | `tanebi.event_store.emit_event()` | |
 | タスク初期化 | `tanebi.event_store.create_task()` | |
 | Worker→Core通知 | `tanebi.core.callback.handle_callback()` | |
-| 設定読み込み | `tanebi.config` | ← tanebi.core.config から変更 |
+| 設定読み込み | `tanebi.config` | |
+| フロー制御ハンドラ | `tanebi.core.flow` | on_task_created 等 |
+| Core Listener | `tanebi.core.listener.CoreListener` | *.completed 監視 |
 | シグナル検出・蓄積 | `tanebi.core.signal` | |
 | パターン蒸留 | `tanebi.core.distill` | |
 | パターン注入 | `tanebi.core.inject` | |
+
+## テスト実行
+
+```bash
+source .venv/bin/activate && pytest tests/ -v
+```
 
 ## 参考ドキュメント
 

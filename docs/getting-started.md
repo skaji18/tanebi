@@ -39,7 +39,7 @@ export ANTHROPIC_API_KEY=your_api_key_here  # まだ設定していない場合
 
 ## Your First Task
 
-TANEBI は Claude Code の `CLAUDE.md` を自動ロードすることで起動する。
+TANEBI は Claude Code の `CLAUDE.md` を自動ロードすることで起動する。Claude Code は起動ディレクトリの CLAUDE.md を自動読込し、その指示に従う。
 
 ```bash
 cd tanebi
@@ -52,15 +52,22 @@ claude
 - 過去のコマンド数（`work/`）
 - タスク入力の案内
 
-タスクを入力するとフローが始まる:
+タスクを入力するとフローが始まる（統一フロー: DECOMPOSE → EXECUTE → [CHECKPOINT] → AGGREGATE → LEARN）:
 
 1. **REQUEST** — `work/cmd_NNN/request.md` に依頼を保存
 2. **DECOMPOSE** — Decomposer がサブタスクに分解
 3. **EXECUTE** — Worker がサブタスクを実行、Event Store に結果を記録
-4. **AGGREGATE** — 結果を統合してレポートを生成
-5. **LEARN** — シグナル蓄積・蒸留・パターン注入で知識を更新
+4. **CHECKPOINT**（オプション）— 中間品質チェックと進捗評価
+5. **AGGREGATE** — 結果を統合してレポートを生成
+6. **LEARN** — シグナル蓄積・蒸留・パターン注入で知識を更新
 
 実行結果は `work/cmd_NNN/` に蓄積される。
+
+タスク入力例（claude 起動後に何を入力するか）:
+
+- `FizzBuzzを実装してください（1から100まで）`
+- `src/ 以下のユニットテストをすべて書いてください`
+- `README.md の誤字を修正してください`
 
 ## Architecture Overview
 

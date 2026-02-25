@@ -260,6 +260,17 @@ Claude セッションは Section 5.3 のハンドラテーブルに従い逐次
 
 ### 6.3 外部 Listener モード（claude_native: false）
 
+#### イベントファイル命名規約
+
+```
+{seq}_{event_type}.yaml
+```
+
+- `seq` — 3桁以上のゼロ埋め連番（例: `001`, `002`）
+- `event_type` — イベント種別（例: `task.created`, `decompose.requested`）
+- **`event_type` にアンダースコア（`_`）は使用禁止**。ドット（`.`）区切りを使うこと
+- 例: `001_task.created.yaml`, `002_decompose.requested.yaml`
+
 Core と Executor が独立したイベントリスナーとして動作する。
 以下は subprocess（claude -p）による Listener 実装例だが、
 Lambda / Docker 等でも同じイベント契約に従えば差し替え可能。
@@ -516,6 +527,9 @@ def run_claude_p(
 具体的な値（request 内容、subtask 詳細等）は user prompt として stdin で渡す。
 テンプレートはロール定義（system prompt）、具体値はプロンプト本文（user prompt）。
 
+**実装状況**: 各テンプレートファイルはプレースホルダーを含まない純粋なロール定義となっている。
+`run_claude_p()` はテンプレートを `--system-prompt` として渡し、具体的な依頼内容は stdin 経由で渡す。
+
 ---
 
 ## 8. イベント claiming（重複処理防止）
@@ -626,7 +640,7 @@ claude
 
 ## 11. 実装対象ファイル
 
-### Phase 2 で作成するもの
+### 実装済みファイル一覧
 
 | ファイル | 内容 |
 |---------|------|
@@ -655,6 +669,15 @@ claude
 |---------|------|
 | `scripts/command_executor.sh` | Python Executor Listener（`src/tanebi/executor/listener.py`）に置換・削除済み |
 | `scripts/subprocess_worker.sh` | Python worker（`src/tanebi/executor/worker.py`）に置換・削除済み |
+
+### テスト実行
+
+```bash
+source .venv/bin/activate
+pytest tests/ -v
+```
+
+全テストが PASS（0 failed, 0 skipped）であることを確認すること。
 
 ---
 

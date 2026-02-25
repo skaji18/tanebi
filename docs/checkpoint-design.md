@@ -1,7 +1,7 @@
 # Checkpoint 設計書
 
 生成日: 2026-02-23
-根拠: design.md Section 7 のフロー拡張。殿の仕様に基づく設計。
+根拠: design.md Section 4 のフロー拡張。ユーザー仕様に基づく設計。
 
 ---
 
@@ -526,7 +526,7 @@ source: "checkpoint_round1_cmd_001"
 
 ### 10.1 概要
 
-既存 11 種 + 新規 2 種 = **13 種**のイベントとなる。
+既存 13 種 + distillイベント 2 種 = **15 種**のイベントとなる。
 
 ### 10.2 新規イベント
 
@@ -558,6 +558,12 @@ checkpoint.requested:
 **注**: `checkpoint.requested` は `execute.requested` と同じ ExecutorListener が処理する。
 payload に `subtask_type: checkpoint` を含め、ExecutorListener が分岐する。
 
+**flow.py によるパース** (`_emit_checkpoint_completed`):
+1. `checkpoint.requested` イベントから `wave` 番号を特定
+2. 同 wave の `worker.completed` を収集し、各 checkpoint worker の `checkpoint_output` から `verdict` を抽出
+3. `_aggregate_verdicts(checkpoint_results, policy)` で最終判定を集約
+4. `checkpoint.completed` イベントとして `verdict`, `failed_subtasks`, `summary` を emit
+
 #### checkpoint.completed
 
 | 項目 | 値 |
@@ -573,18 +579,18 @@ checkpoint.completed:
   payload:
     task_id: string
     round: integer
-    status: enum[pass, fail]
-    verdict_policy: string      # 使用した集約ポリシー
-    checkpoint_results:         # 各 checkpoint worker の判定結果
-      - checkpoint_id: string
-        verdict: enum[pass, fail]
+    verdict: enum[pass, fail]   # flow.py 実装に合わせて verdict を使用
     failed_subtasks:            # fail 判定の subtask 詳細
       - subtask_id: string
         attribution: enum[execution, input, partial]
         reason: string
     summary: string
-    timestamp: string
 ```
+
+**flow.py によるパース** (`on_checkpoint_completed`):
+1. `verdict = payload.get("verdict", "pass")` で合否を取得
+2. `verdict == "pass"` または `round >= max_rounds` → `aggregate.requested` を emit（best-effort集計）
+3. `verdict == "fail"` かつ `round < max_rounds` → `decompose.requested`（round+1, `checkpoint_feedback` 付き）を emit してループを継続
 
 ### 10.3 ExecutorListener の分岐
 
