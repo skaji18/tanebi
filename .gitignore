@@ -1,13 +1,16 @@
 # Work directories (task-specific, generated at runtime)
 work/
 
-# Persona runtime data (active evolves with usage, history stores snapshots)
-personas/active/
-personas/history/
-
-# Knowledge (generated at runtime)
-knowledge/episodes/
-knowledge/few_shot_bank/*/
+# Knowledge runtime data (keep .gitkeep for dir structure)
+knowledge/signals/**
+!knowledge/signals/**/.gitkeep
+knowledge/learned/**
+!knowledge/learned/**/.gitkeep
+knowledge/episodes/**
+!knowledge/episodes/**/.gitkeep
+knowledge/_meta/*.yaml
+knowledge/few_shot_bank/*
+!knowledge/few_shot_bank/_format.md
 
 # OS files
 .DS_Store
@@ -27,6 +30,8 @@ reports/
 # Python
 __pycache__/
 .venv/
+src/tanebi.egg-info/
+.pytest_cache/
 
 # Claude Code
 .claude/
