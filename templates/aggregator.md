@@ -14,7 +14,7 @@ allowed-tools: [Read, Write, Glob]
 作業開始前にUser promptを読み取り、以下の値を把握せよ:
 
 - `results_dir` — Worker結果ファイルが格納されているディレクトリパス
-- `cmd_id` — コマンドID
+- `task_id` — コマンドID
 - `report_path` — 出力するreport.mdのパス
 
 ## Step 1: Worker結果の収集
@@ -31,12 +31,12 @@ User promptから `results_dir` を取得し、そのディレクトリ以下の
 
 ## Step 2: 統合レポート生成
 
-User promptから `report_path`、`cmd_id` を取得し、以下のフォーマットで `report_path` に書き出してください。
+User promptから `report_path`、`task_id` を取得し、以下のフォーマットで `report_path` に書き出してください。
 `created_at` は現在時刻（ISO 8601形式）を使用する。
 
 ```yaml
 ---
-cmd: <cmd_id>
+cmd: <task_id>
 created_at: "<現在時刻>"
 total_subtasks: N
 succeeded: N
@@ -47,7 +47,7 @@ quality_summary:
   RED: N
 ---
 
-# タスク実行レポート: <cmd_id>
+# タスク実行レポート: <task_id>
 
 ## サマリー
 [1-3行でのタスク全体の結果要約]

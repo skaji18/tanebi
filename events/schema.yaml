@@ -8,15 +8,9 @@ events:
   task.created:
     description: "タスク作成時"
     payload:
-      task_id:
-        type: string
-        required: true
-      request_summary:
-        type: string
-        required: true
-      timestamp:
-        type: string  # ISO 8601
-        required: true
+      task_id: string
+      request_summary: string
+      timestamp: string  # ISO 8601
 
   # ===== Core → Executor =====
 
@@ -129,52 +123,26 @@ events:
   error.worker_failed:
     description: "Worker失敗時"
     payload:
-      task_id:
-        type: string
-        required: true
-      subtask_id:
-        type: string
-        required: true
-      error_detail:
-        type: string
-        required: true
+      task_id: string
+      subtask_id: string
+      error_detail: string
 
   # ===== Learning Engine =====
 
   distill.requested:
     description: "蒸留処理の開始リクエスト"
     payload:
-      task_id:
-        type: string
-        required: true
-      domain:
-        type: string
-        required: true
-      signal_count:
-        type: integer
-        required: true
-      signal_ids:
-        type: array
-        required: true
-      timestamp:
-        type: string
-        required: true
+      task_id: string
+      domain: string
+      signal_count: integer
+      signal_ids: array
+      timestamp: string
 
   distill.completed:
     description: "蒸留処理の完了通知"
     payload:
-      task_id:
-        type: string
-        required: true
-      domain:
-        type: string
-        required: true
-      patterns_created:
-        type: array
-        required: true
-      confidence:
-        type: number
-        required: true
-      timestamp:
-        type: string
-        required: true
+      task_id: string
+      domain: string
+      patterns_created: array
+      confidence: number
+      timestamp: string

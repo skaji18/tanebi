@@ -2,12 +2,39 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Dict, Any
 
 import yaml
+
+
+def parse_worker_frontmatter(text: str) -> Dict[str, Any]:
+    """Worker stdout からフロントマター (---\n...\n---) を解析する。
+
+    フロントマターが存在し YAML パースできれば dict を返す。
+    取得できない場合はデフォルト値を返す。
+    """
+    defaults = {"status": "success", "quality": "YELLOW", "domain": "general"}
+    if not text or not text.startswith("---"):
+        return defaults
+    match = re.match(r"^---\n(.*?\n)---", text, re.DOTALL)
+    if not match:
+        return defaults
+    try:
+        parsed = yaml.safe_load(match.group(1))
+        if not isinstance(parsed, dict):
+            return defaults
+        return {
+            "status": parsed.get("status", defaults["status"]),
+            "quality": parsed.get("quality", defaults["quality"]),
+            "domain": parsed.get("domain", defaults["domain"]),
+        }
+    except yaml.YAMLError:
+        return defaults
 
 
 def try_claim(event_path: Path) -> bool:
@@ -87,7 +114,7 @@ class ExecutorListener:
             result = run_claude_p(system, f"Decompose: {payload.get('request_path', '')}")
             emit_event(cmd_dir, "task.decomposed", {
                 "task_id": cmd_dir.name, "plan": {}
-            }, validate=False)
+            })
         except (WorkerError, Exception) as e:
             print(f"Decompose error for {cmd_dir.name}: {e}", file=sys.stderr)
 
@@ -111,26 +138,26 @@ class ExecutorListener:
                 "subtask_id": payload.get("subtask_id", ""),
                 "wave": wave,
                 "round": round_num,
-            }, round=round_num, validate=False)
+            }, round=round_num)
             result = run_claude_p(system, str(payload))
             # 結果ファイルを results/round{N}/ に書き出す
             subtask_id = payload.get("subtask_id", "unknown")
             result_file = results_dir / f"{subtask_id}.md"
             result_file.write_text(result, encoding="utf-8")
+            fm = parse_worker_frontmatter(result)
             emit_event(cmd_dir, "worker.completed", {
                 "task_id": cmd_dir.name,
                 "subtask_id": subtask_id,
-                "subtask_type": subtask_type,
-                "wave": wave,
-                "round": round_num,
-                "output": result,
-            }, round=round_num, validate=False)
+                "status": fm["status"],
+                "quality": fm["quality"],
+                "domain": fm["domain"],
+            }, round=round_num)
         except WorkerError as e:
             emit_event(cmd_dir, "error.worker_failed", {
                 "task_id": cmd_dir.name,
-                "worker_id": payload.get("subtask_id", ""),
-                "error": str(e),
-            }, validate=False)
+                "subtask_id": payload.get("subtask_id", ""),
+                "error_detail": str(e),
+            })
             # 例外を再raiseしない（スレッドが死なないように）
 
     def _run_aggregate(self, cmd_dir: Path, payload: dict) -> None:
@@ -148,6 +175,6 @@ class ExecutorListener:
             emit_event(cmd_dir, "task.aggregated", {
                 "task_id": cmd_dir.name,
                 "report_path": str(report_path),
-            }, validate=False)
+            })
         except (WorkerError, Exception) as e:
             print(f"Aggregate error for {cmd_dir.name}: {e}", file=sys.stderr)

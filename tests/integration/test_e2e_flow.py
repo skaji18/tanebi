@@ -56,7 +56,7 @@ def test_full_flow_task_submit_to_execute(mock_run_claude, tmp_tanebi_root):
             {"id": "sub_001", "description": "テストサブタスク", "wave": 1},
         ]
     }
-    emit_event(cmd_dir, "task.decomposed", {"task_id": task_id, "plan": plan}, validate=False)
+    emit_event(cmd_dir, "task.decomposed", {"task_id": task_id, "plan": plan})
 
     # 4. CoreListener が task.decomposed を処理 → wave=1 の execute.requested 発行
     task_decomposed_path = next(
@@ -74,8 +74,7 @@ def test_full_flow_task_submit_to_execute(mock_run_claude, tmp_tanebi_root):
     emit_event(
         cmd_dir,
         "worker.completed",
-        {"task_id": task_id, "subtask_id": "sub_001", "wave": 1, "output": "mock output"},
-        validate=False,
+        {"task_id": task_id, "subtask_id": "sub_001", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1, "output": "mock output"},
     )
 
     # 6. CoreListener が worker.completed を処理 → wave.completed 発行
@@ -104,8 +103,7 @@ def test_full_flow_task_submit_to_execute(mock_run_claude, tmp_tanebi_root):
     emit_event(
         cmd_dir,
         "task.aggregated",
-        {"task_id": task_id, "report_path": str(cmd_dir / "report.md")},
-        validate=False,
+        {"task_id": task_id, "report_path": str(cmd_dir / "report.md"), "quality_summary": {}},
     )
 
     # 9. api.status() でタスク状態が確認できる

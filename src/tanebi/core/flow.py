@@ -170,7 +170,6 @@ def _emit_checkpoint_completed(cmd_dir: Path, round: int) -> None:
             "summary": summary,
         },
         round=round,
-        validate=False,
     )
 
 
@@ -263,7 +262,6 @@ def on_task_created(cmd_dir: Path, payload: dict) -> None:
             "request_path": str(cmd_dir / "request.md"),
             "plan_output_path": str(cmd_dir / "plan.md"),
         },
-        validate=False,
     )
 
 
@@ -316,7 +314,6 @@ def on_task_decomposed(cmd_dir: Path, payload: dict) -> None:
                 "subtask_description": subtask.get("description", ""),
                 "wave": 1,
             },
-            validate=False,
         )
 
 
@@ -333,9 +330,9 @@ def on_worker_completed(cmd_dir: Path, payload: dict) -> None:
                 "task_id": cmd_dir.name,
                 "wave": wave,
                 "round": round_num,
+                "results_summary": {},
             },
             round=round_num,
-            validate=False,
         )
 
 
@@ -405,17 +402,22 @@ def on_wave_completed(cmd_dir: Path, payload: dict) -> None:
         # 最終 wave 完了 → checkpoint wave に進む
         checkpoint_wave = max_wave + 1
         for subtask in checkpoint_subtasks:
+            subtask_id = subtask["id"]
             emit_event(
                 cmd_dir,
                 "checkpoint.requested",
                 {
                     "task_id": task_id,
                     "round": round_num,
-                    "subtask_id": subtask["id"],
+                    "subtask_id": subtask_id,
+                    "subtask_type": "checkpoint",
                     "wave": checkpoint_wave,
+                    "request_path": str(cmd_dir / "request.md"),
+                    "plan_path": str(cmd_dir / f"plan.round{round_num}.md"),
+                    "results_dir": str(cmd_dir / f"results/round{round_num}"),
+                    "output_path": str(cmd_dir / f"results/round{round_num}/{subtask_id}.md"),
                 },
                 round=round_num,
-                validate=False,
             )
     elif current_wave == max_wave + 1 and checkpoint_subtasks:
         # checkpoint wave 完了 → verdict 集約
@@ -449,7 +451,6 @@ def on_wave_completed(cmd_dir: Path, payload: dict) -> None:
                         "round": round_num,
                     },
                     round=round_num,
-                    validate=False,
                 )
         else:
             results_dir = cmd_dir / "results" / f"round{round_num}"
@@ -464,7 +465,6 @@ def on_wave_completed(cmd_dir: Path, payload: dict) -> None:
                     "round": round_num,
                 },
                 round=round_num,
-                validate=False,
             )
 
 
@@ -496,7 +496,6 @@ def on_checkpoint_completed(cmd_dir: Path, payload: dict) -> None:
                 "round": round_num,
             },
             round=round_num,
-            validate=False,
         )
     else:
         # fail → re-decompose with feedback
@@ -518,5 +517,4 @@ def on_checkpoint_completed(cmd_dir: Path, payload: dict) -> None:
                 },
             },
             round=next_round,
-            validate=False,
         )

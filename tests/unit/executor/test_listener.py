@@ -178,7 +178,7 @@ def test_emit_event_thread_safe_no_duplicate_seq(tmp_path):
 
     def emit_once() -> None:
         try:
-            path = emit_event(cmd_dir, "worker.started", {"cmd_id": "cmd_001"}, validate=False)
+            path = emit_event(cmd_dir, "worker.started", {"task_id": "cmd_001", "subtask_id": "s1", "wave": 1})
             results.append(path.name)
         except Exception as exc:
             errors.append(exc)

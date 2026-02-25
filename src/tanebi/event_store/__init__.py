@@ -199,7 +199,10 @@ def create_task(work_dir: Path, task_id: str, request: str) -> Path:
     os.mkdir(str(cmd_dir))  # atomic: raises FileExistsError if already exists
     (cmd_dir / "request.md").write_text(request, encoding="utf-8")
     (cmd_dir / "events").mkdir()
-    emit_event(cmd_dir, "task.created", {"cmd_id": task_id}, validate=False)
+    emit_event(cmd_dir, "task.created", {
+        "task_id": task_id,
+        "request_summary": request[:100],
+    })
     return cmd_dir
 
 
@@ -240,7 +243,7 @@ def get_task_summary(cmd_dir: Path) -> dict:
         payload = e.get("payload", {})
         rnd = payload.get("round")
         if rnd is not None:
-            current_round = max(current_round, rnd)
+            current_round = max(current_round, int(rnd))
         if e.get("event_type") == "checkpoint.completed":
             latest_checkpoint_verdict = payload.get("verdict")
 

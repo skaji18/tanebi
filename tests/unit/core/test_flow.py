@@ -31,22 +31,22 @@ def test_determine_state_unknown(tmp_tanebi_root):
 def test_determine_state_needs_decompose(tmp_tanebi_root):
     """task.created が最後のイベント → 'needs_decompose'"""
     cmd_dir = _cmd_dir(tmp_tanebi_root)
-    emit_event(cmd_dir, "task.created", {"cmd_id": "cmd_001"}, validate=False)
+    emit_event(cmd_dir, "task.created", {"task_id": "cmd_001", "request_summary": "テスト"})
     assert determine_state(cmd_dir) == "needs_decompose"
 
 
 def test_determine_state_completed(tmp_tanebi_root):
     """task.aggregated が最後のイベント → 'completed'"""
     cmd_dir = _cmd_dir(tmp_tanebi_root)
-    emit_event(cmd_dir, "task.created", {"cmd_id": "cmd_001"}, validate=False)
-    emit_event(cmd_dir, "task.aggregated", {"cmd_id": "cmd_001"}, validate=False)
+    emit_event(cmd_dir, "task.created", {"task_id": "cmd_001", "request_summary": "テスト"})
+    emit_event(cmd_dir, "task.aggregated", {"task_id": "cmd_001", "report_path": "/tmp/report.md", "quality_summary": {}})
     assert determine_state(cmd_dir) == "completed"
 
 
 def test_on_task_created_emits_decompose_requested(tmp_tanebi_root):
     """on_task_created → decompose.requested が発火される"""
     cmd_dir = _cmd_dir(tmp_tanebi_root)
-    on_task_created(cmd_dir, {"cmd_id": "cmd_001"})
+    on_task_created(cmd_dir, {"task_id": "cmd_001"})
     events_dir = cmd_dir / "events"
     event_files = list(events_dir.glob("*.yaml"))
     assert len(event_files) == 1
@@ -59,10 +59,10 @@ def test_on_worker_completed_wave_complete(tmp_tanebi_root):
     """全worker完了 → wave.completed 発火"""
     cmd_dir = _cmd_dir(tmp_tanebi_root)
     # execute.requested x2, worker.completed x2
-    emit_event(cmd_dir, "execute.requested", {"subtask_id": "s1", "wave": 1}, validate=False)
-    emit_event(cmd_dir, "execute.requested", {"subtask_id": "s2", "wave": 1}, validate=False)
-    emit_event(cmd_dir, "worker.completed", {"subtask_id": "s1", "wave": 1}, validate=False)
-    emit_event(cmd_dir, "worker.completed", {"subtask_id": "s2", "wave": 1}, validate=False)
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s1", "subtask_description": "desc", "wave": 1})
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s2", "subtask_description": "desc", "wave": 1})
+    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1})
+    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s2", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1})
 
     on_worker_completed(cmd_dir, {"wave": 1})
 
@@ -76,9 +76,9 @@ def test_on_worker_completed_wave_complete(tmp_tanebi_root):
 def test_on_worker_completed_not_yet(tmp_tanebi_root):
     """未完了 → wave.completed 発火しない"""
     cmd_dir = _cmd_dir(tmp_tanebi_root)
-    emit_event(cmd_dir, "execute.requested", {"subtask_id": "s1", "wave": 1}, validate=False)
-    emit_event(cmd_dir, "execute.requested", {"subtask_id": "s2", "wave": 1}, validate=False)
-    emit_event(cmd_dir, "worker.completed", {"subtask_id": "s1", "wave": 1}, validate=False)
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s1", "subtask_description": "desc", "wave": 1})
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s2", "subtask_description": "desc", "wave": 1})
+    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1})
     # s2はまだ完了していない
 
     on_worker_completed(cmd_dir, {"wave": 1})
@@ -121,8 +121,8 @@ def test_on_wave_completed_all_failed_raises(tmp_tanebi_root):
     }
     (cmd_dir / "plan.md").write_text(yaml.dump(plan), encoding="utf-8")
 
-    emit_event(cmd_dir, "error.worker_failed", {"subtask_id": "s1", "wave": 1}, validate=False)
-    emit_event(cmd_dir, "error.worker_failed", {"subtask_id": "s2", "wave": 1}, validate=False)
+    emit_event(cmd_dir, "error.worker_failed", {"task_id": "cmd_001", "subtask_id": "s1", "error_detail": "failed", "wave": 1})
+    emit_event(cmd_dir, "error.worker_failed", {"task_id": "cmd_001", "subtask_id": "s2", "error_detail": "failed", "wave": 1})
 
     with pytest.raises(RuntimeError, match="All workers failed in wave 1"):
         on_wave_completed(cmd_dir, {"wave": 1, "task_id": "cmd_001"})
@@ -139,8 +139,8 @@ def test_on_wave_completed_partial_failure_continues(tmp_tanebi_root):
     }
     (cmd_dir / "plan.md").write_text(yaml.dump(plan), encoding="utf-8")
 
-    emit_event(cmd_dir, "worker.completed", {"subtask_id": "s1", "wave": 1}, validate=False)
-    emit_event(cmd_dir, "error.worker_failed", {"subtask_id": "s2", "wave": 1}, validate=False)
+    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1})
+    emit_event(cmd_dir, "error.worker_failed", {"task_id": "cmd_001", "subtask_id": "s2", "error_detail": "failed", "wave": 1})
 
     # 例外なしで継続
     on_wave_completed(cmd_dir, {"wave": 1, "task_id": "cmd_001"})
@@ -156,7 +156,7 @@ def test_on_wave_completed_all_success_continues(tmp_tanebi_root):
     }
     (cmd_dir / "plan.md").write_text(yaml.dump(plan), encoding="utf-8")
 
-    emit_event(cmd_dir, "worker.completed", {"subtask_id": "s1", "wave": 1}, validate=False)
+    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1})
 
     # 例外なしで継続
     on_wave_completed(cmd_dir, {"wave": 1, "task_id": "cmd_001"})
@@ -251,13 +251,13 @@ def test_all_workers_complete_filters_by_round(tmp_tanebi_root):
     cmd_dir = _cmd_dir(tmp_tanebi_root)
 
     # round=1 の execute.requested と worker.completed（未完了: 2リクエスト1完了）
-    emit_event(cmd_dir, "execute.requested", {"subtask_id": "r1s1", "wave": 1, "round": 1}, validate=False)
-    emit_event(cmd_dir, "execute.requested", {"subtask_id": "r1s2", "wave": 1, "round": 1}, validate=False)
-    emit_event(cmd_dir, "worker.completed", {"subtask_id": "r1s1", "wave": 1, "round": 1}, validate=False)
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "r1s1", "subtask_description": "desc", "wave": 1, "round": 1})
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "r1s2", "subtask_description": "desc", "wave": 1, "round": 1})
+    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "r1s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1, "round": 1})
 
     # round=2 の execute.requested と worker.completed（完了: 1リクエスト1完了）
-    emit_event(cmd_dir, "execute.requested", {"subtask_id": "r2s1", "wave": 1, "round": 2}, validate=False)
-    emit_event(cmd_dir, "worker.completed", {"subtask_id": "r2s1", "wave": 1, "round": 2}, validate=False)
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "r2s1", "subtask_description": "desc", "wave": 1, "round": 2})
+    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "r2s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1, "round": 2})
 
     # round=2 の on_worker_completed → wave.completed が発火されるべき
     on_worker_completed(cmd_dir, {"wave": 1, "round": 2})
