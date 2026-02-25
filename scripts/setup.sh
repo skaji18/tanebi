@@ -73,4 +73,4 @@ echo "[setup] tanebi CLI OK."
 
 echo ""
 echo "[setup] Done."
-echo "Setup complete! Run 'source .venv/bin/activate' to activate the environment."
+echo "Setup complete! Run '.venv/bin/tanebi --version' to verify."

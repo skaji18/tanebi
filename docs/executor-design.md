@@ -673,8 +673,7 @@ claude
 ### テスト実行
 
 ```bash
-source .venv/bin/activate
-pytest tests/ -v
+.venv/bin/pytest tests/ -v
 ```
 
 全テストが PASS（0 failed, 0 skipped）であることを確認すること。

@@ -9,8 +9,8 @@ claude-native アダプター（MVP）: `git clone → cd tanebi → claude` で
 
 ## Python 実行環境
 - python3コマンドの直接実行禁止
-- venv有効化: `source .venv/bin/activate`
-- tanebi CLI実行: `.venv/bin/python -m tanebi <コマンド>` または venv有効化後に `tanebi <コマンド>`
+- tanebi CLI実行: `.venv/bin/tanebi <コマンド>`
+- Python直接実行が必要な場合: `.venv/bin/python -m tanebi <コマンド>`
 
 ## アーキテクチャ概要
 
@@ -103,7 +103,7 @@ Python実装の対応表:
 ## テスト実行
 
 ```bash
-source .venv/bin/activate && pytest tests/ -v
+.venv/bin/pytest tests/ -v
 ```
 
 ## 参考ドキュメント

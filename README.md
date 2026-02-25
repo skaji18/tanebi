@@ -30,8 +30,7 @@ In conventional multi-agent systems, agents are disposable: their knowledge rese
 git clone https://github.com/skaji18/tanebi
 cd tanebi
 bash scripts/setup.sh
-source .venv/bin/activate
-tanebi --version   # tanebi 0.1.0
+.venv/bin/tanebi --version   # tanebi 0.1.0
 export ANTHROPIC_API_KEY=your_api_key_here  # https://console.anthropic.com/
 claude
 ```

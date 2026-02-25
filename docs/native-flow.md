@@ -41,13 +41,6 @@ Core（Claude Code）                 Event Store                      Executor
 ユーザーの依頼を受け取り、tanebi にタスクを登録する。
 
 ```bash
-cd ~/projects/tanebi
-
-# venv をアクティブにする場合
-source .venv/bin/activate
-tanebi new "APIエンドポイントを実装してほしい"
-
-# または activate なしで直接実行
 .venv/bin/tanebi new "APIエンドポイントを実装してほしい"
 ```
 
@@ -341,17 +334,11 @@ Learned Patterns が存在しない場合 → Worker は Learned Patterns なし
 
 ---
 
-## venv の扱い
+## tanebi CLI の実行方法
+
+すべてのコマンドは `.venv/bin/tanebi` で直接実行する。`source .venv/bin/activate` は不要。
 
 ```bash
-# 方法1: activate して使う
-cd ~/projects/tanebi
-source .venv/bin/activate
-tanebi new "..."
-tanebi emit ...
-tanebi status ...
-
-# 方法2: activate なしで直接実行（スクリプト・自動化向け）
 .venv/bin/tanebi new "..."
 .venv/bin/tanebi emit ...
 .venv/bin/tanebi status ...

@@ -32,8 +32,7 @@ bash scripts/setup.sh
 ### 3. 動作確認
 
 ```bash
-source .venv/bin/activate
-tanebi --version   # tanebi 0.1.0
+.venv/bin/tanebi --version   # tanebi 0.1.0
 export ANTHROPIC_API_KEY=your_api_key_here  # まだ設定していない場合
 ```
 
