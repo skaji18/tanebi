@@ -261,7 +261,6 @@ def on_task_created(cmd_dir: Path, payload: dict) -> None:
         {
             "task_id": cmd_dir.name,
             "request_path": str(cmd_dir / "request.md"),
-            "persona_list": [],
             "plan_output_path": str(cmd_dir / "plan.md"),
         },
         validate=False,
@@ -509,7 +508,6 @@ def on_checkpoint_completed(cmd_dir: Path, payload: dict) -> None:
                 "task_id": task_id,
                 "round": next_round,
                 "request_path": str(cmd_dir / "request.md"),
-                "persona_list": [],
                 "plan_output_path": str(cmd_dir / f"plan.round{next_round}.md"),
                 "checkpoint_feedback": {
                     "previous_round": round_num,

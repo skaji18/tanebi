@@ -63,7 +63,6 @@ mkdir -p "$TANEBI_ROOT/work"
 mkdir -p "$TANEBI_ROOT/knowledge/signals"
 mkdir -p "$TANEBI_ROOT/knowledge/learned"
 mkdir -p "$TANEBI_ROOT/knowledge/episodes"
-mkdir -p "$TANEBI_ROOT/knowledge/few_shot_bank"
 mkdir -p "$TANEBI_ROOT/knowledge/_meta"
 echo "[setup] Runtime directories OK."
 

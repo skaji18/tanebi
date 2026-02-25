@@ -11,20 +11,13 @@ def reset_config_cache():
 
 
 def test_validate_config_ok():
-    """Valid config with both required fields raises no error."""
-    config = {"work_dir": "work", "persona_dir": "personas/active"}
+    """Valid config with required field raises no error."""
+    config = {"work_dir": "work"}
     validate_config(config)  # should not raise
 
 
 def test_validate_config_missing_work_dir():
     """Config without work_dir raises ValueError."""
-    config = {"persona_dir": "personas/active"}
+    config = {}
     with pytest.raises(ValueError, match="Missing required config field: work_dir"):
-        validate_config(config)
-
-
-def test_validate_config_missing_persona_dir():
-    """Config without persona_dir raises ValueError."""
-    config = {"work_dir": "work"}
-    with pytest.raises(ValueError, match="Missing required config field: persona_dir"):
         validate_config(config)

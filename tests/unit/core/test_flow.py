@@ -53,7 +53,6 @@ def test_on_task_created_emits_decompose_requested(tmp_tanebi_root):
     data = yaml.safe_load(event_files[0].read_text(encoding="utf-8"))
     assert data["event_type"] == "decompose.requested"
     assert data["payload"]["task_id"] == "cmd_001"
-    assert data["payload"]["persona_list"] == []
 
 
 def test_on_worker_completed_wave_complete(tmp_tanebi_root):

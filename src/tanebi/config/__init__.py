@@ -6,8 +6,7 @@ import yaml
 
 __all__ = [
     "load_config", "get", "validate_config", "get_path", "_reset_cache",
-    "TANEBI_ROOT", "PERSONA_DIR", "LIBRARY_DIR", "HISTORY_DIR",
-    "WORK_DIR", "FEW_SHOT_DIR", "KNOWLEDGE_DIR", "EPISODE_DIR",
+    "TANEBI_ROOT", "WORK_DIR", "KNOWLEDGE_DIR", "EPISODE_DIR",
 ]
 
 _cache: dict | None = None
@@ -60,14 +59,10 @@ def validate_config(config: dict) -> None:
     """Validate required config fields."""
     tanebi = config.get("tanebi", {}) or {}
     paths = tanebi.get("paths", {}) or {}
-    # work_dir と persona_dir のどちらかの形式でチェック
-    # (既存 flat or nested tanebi.paths.work_dir)
+    # flat or nested tanebi.paths.work_dir 形式でチェック
     work_dir = config.get("work_dir") or paths.get("work_dir")
-    persona_dir = config.get("persona_dir") or paths.get("persona_dir")
     if not work_dir:
         raise ValueError("Missing required config field: work_dir")
-    if not persona_dir:
-        raise ValueError("Missing required config field: persona_dir")
 
 
 def get_path(key: str, default=None, tanebi_root=None) -> str | None:
@@ -91,18 +86,13 @@ def _reset_cache() -> None:
     _root_cache = None
 
 
-# パス定数（互換性維持のためモジュールレベルで export）
+# パス定数（モジュールレベルで export）
 def _init_paths():
-    global TANEBI_ROOT, PERSONA_DIR, LIBRARY_DIR, HISTORY_DIR
-    global WORK_DIR, FEW_SHOT_DIR, KNOWLEDGE_DIR, EPISODE_DIR
+    global TANEBI_ROOT, WORK_DIR, KNOWLEDGE_DIR, EPISODE_DIR
     root = _find_tanebi_root()
     cfg = load_config(root)
     TANEBI_ROOT = str(root)
-    PERSONA_DIR = str(root / cfg.get("persona_dir", "personas/active"))
-    LIBRARY_DIR = str(root / cfg.get("library_dir", "personas/library"))
-    HISTORY_DIR = str(root / cfg.get("history_dir", "personas/history"))
     WORK_DIR = str(root / cfg.get("work_dir", "work"))
-    FEW_SHOT_DIR = str(root / cfg.get("few_shot_dir", "knowledge/few_shot_bank"))
     KNOWLEDGE_DIR = str(root / cfg.get("knowledge_dir", "knowledge"))
     EPISODE_DIR = str(root / cfg.get("episode_dir", "knowledge/episodes"))
 
