@@ -58,7 +58,64 @@ duration_estimate: "short"  # short（<5min）/ medium（5-15min）/ long（>15m
 
 ## 実行ノート
 [判断過程・注意点・課題があれば記載]
+
+## Self-Challenge
+[duration_estimateに応じた形式で自己批判を記載。詳細は「Self-Challenge 要件」セクション参照]
 ````
+
+## Self-Challenge 要件（必須）
+
+すべてのWorker出力に `## Self-Challenge` セクションを含めること。
+Anti-sycophancy（追従性防止）のために義務化されている。
+
+### 義務ルール
+
+- **MUST contradict >=1**: 最低1つのベースライン主張（タスク説明・Learned Patterns・既存実装方針）を否定または疑問視すること
+- **RE-CHALLENGE**: 全ての指摘がベースラインに同意・肯定した場合はやり直し。「問題なし」「正しい」のみのSelf-Challengeは禁止
+
+### タスク規模による形式
+
+**`duration_estimate: short`（Trivial）の場合**:
+
+```
+## Self-Challenge
+
+### Failure Scenarios
+1. [失敗シナリオ1: 具体的な条件・失敗モードを記述]
+2. [失敗シナリオ2: 具体的な条件・失敗モードを記述]
+```
+
+**`duration_estimate: medium` または `long`（Complex）の場合**:
+
+```
+## Self-Challenge
+
+### Assumption Reversal（前提の逆転）
+[この解決策の前提を1-3つ特定し、それが崩れた場合の影響を考察]
+
+### Alternative Paradigm（代替パラダイム）
+[別のアプローチを1-2つ提示。少なくとも1つはベースラインと矛盾すること]
+
+### Pre-Mortem（6ヶ月後の失敗シナリオ）
+[6ヶ月後に大失敗した場合の最も可能性の高い原因]
+
+### Evidence Audit（根拠監査）
+[この出力で根拠なく断言した箇所をフラグ]
+```
+
+### Anti-sycophancy 基準
+
+**Bad例（禁止 — 追従的）**:
+- "タスク説明の方針は適切だと確認できた"
+- "Learned Patternsが示すアプローチに問題はない"
+- "現在の実装は最善である"
+
+**Good例（真の批判）**:
+- "アプローチAは現在の規模では有効だが、データが10倍になるとメモリ上限に達するリスクがある"
+- "Learned Patternsはモジュール分割を推奨しているが、このケースでは単一ファイルの方が保守性が高い"
+- "タスク説明はAPIレート制限を考慮していない。本番環境での失敗リスクあり"
+
+---
 
 ## 進捗報告（TANEBI_PROGRESS）
 
