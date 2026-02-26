@@ -1,13 +1,13 @@
 # Executor 実行モデル設計書
 
 生成日: 2026-02-23
-根拠: design.md Section 7 を具体化。設計議論に基づく。
+根拠: design.md Section 6 を具体化。設計議論に基づく。
 
 ---
 
 ## 1. 概要
 
-本文書は design.md Section 7「Executor インターフェース」の実装設計を定める。
+本文書は design.md Section 6「Executor インターフェース」の実装設計を定める。
 design.md が定めた原則（Core と Executor の疎結合、イベントスキーマが唯一の契約）を維持しつつ、
 具体的な実行モデル・モード切替・公開 API を設計する。
 
@@ -234,7 +234,7 @@ tanebi:
     timeout: 300              # 本設計書で追加
 ```
 
-**注**: `claude_native` と `timeout` は本設計書で新たに追加するフィールド。design.md Section 8.1 への反映が必要。
+**注**: `claude_native` と `timeout` は本設計書で新たに追加するフィールド。design.md Section 7.1 への反映が必要。
 
 Core が知るのはこの1フラグだけ。`false` のとき誰がどう処理するか（subprocess / Lambda / Docker）は
 Listener 側の実装詳細であり、Core の関知するところではない。
@@ -353,7 +353,9 @@ class ExecutorListener:
         system = read_template("decomposer.md")
         result = run_claude_p(system, f"Decompose: {payload.get('request_path', '')}")
         emit_event(cmd_dir, "task.decomposed", {
-            "task_id": cmd_dir.name, "plan": {}
+            "task_id": cmd_dir.name,
+            "plan_path": payload.get("plan_output_path", ""),
+            "round": payload.get("round", 1),
         }, validate=False)
 
     def _run_execute(self, cmd_dir: Path, payload: dict) -> None:
@@ -372,9 +374,11 @@ class ExecutorListener:
         emit_event(cmd_dir, "worker.completed", {
             "task_id": cmd_dir.name,
             "subtask_id": payload.get("subtask_id", ""),
+            "status": "success",
+            "quality": "GREEN",
+            "domain": payload.get("domain", ""),
             "wave": wave,
             "round": round_num,
-            "output": result,
         }, round=round_num, validate=False)
 
     def _run_aggregate(self, cmd_dir: Path, payload: dict) -> None:
@@ -385,6 +389,7 @@ class ExecutorListener:
         emit_event(cmd_dir, "task.aggregated", {
             "task_id": cmd_dir.name,
             "report_path": str(report_path),
+            "quality_summary": {},
         }, validate=False)
 ```
 

@@ -10,7 +10,6 @@ tanebi:
     knowledge_dir: "knowledge"            # 知識ベースルートディレクトリ
     signals_dir: "knowledge/signals"      # 生シグナル蓄積（タスク完了後に書き込まれる）
     learned_dir: "knowledge/learned"      # 蒸留済みパターン（蒸留エンジンが生成）
-    episode_dir: "knowledge/episodes"     # エピソードメモリ
 
   # === 実行設定 ===
   execution:
@@ -22,15 +21,18 @@ tanebi:
 
   # === 学習エンジン設定 ===
   learning:
-    min_signals_for_distillation: 5   # 蒸留に必要な最小シグナル数
-    max_patterns_per_domain: 100      # ドメイン毎の最大パターン数
-    routing:
-      weights:
-        quality_score: 0.35
-        completion_rate: 0.30
-        efficiency: 0.20
-        growth_rate: 0.15
-      window: 20                      # routing_score 計算のスライディングウィンドウ
+    signal:
+      auto_detect: true
+      retention_days: 90
+    distillation:
+      min_signals: 3
+      min_confidence: 0.7
+      auto_trigger: true
+    injection:
+      max_approach: 5
+      max_avoid: 5
+      max_decompose: 3
+      max_tooling: 3
 
   # === チェックポイント設定 ===
   checkpoint:

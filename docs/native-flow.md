@@ -113,14 +113,18 @@ ls work/cmd_001/plan.round1.md
 # サブタスク subtask_001 の実行を依頼
 .venv/bin/tanebi emit cmd_001 execute.requested \
   subtask_id=subtask_001 \
+  subtask_description="サブタスクの説明" \
   wave=1 \
-  round=1
+  round=1 \
+  output_path=work/cmd_001/results/round1/subtask_001.md
 
 # サブタスク subtask_002 も同時に依頼（並列実行）
 .venv/bin/tanebi emit cmd_001 execute.requested \
   subtask_id=subtask_002 \
+  subtask_description="サブタスクの説明" \
   wave=1 \
-  round=1
+  round=1 \
+  output_path=work/cmd_001/results/round1/subtask_002.md
 ```
 
 ### 3-2. Worker 起動（Task tool 並列起動）
@@ -221,7 +225,10 @@ summary: "全体の要約"
 ```bash
 # pass の場合: Step 4 へ
 .venv/bin/tanebi emit cmd_001 checkpoint.completed \
-  round=1 verdict=pass
+  round=1 \
+  verdict=pass \
+  failed_subtasks=[] \
+  summary="全サブタスク pass"
 
 # fail の場合: re-decompose（Round 2）
 .venv/bin/tanebi emit cmd_001 decompose.requested \
@@ -275,7 +282,7 @@ ls work/cmd_001/report.md
 ```bash
 .venv/bin/tanebi emit cmd_001 task.aggregated \
   report_path=work/cmd_001/report.md \
-  round=1
+  quality_summary={}
 ```
 
 ---

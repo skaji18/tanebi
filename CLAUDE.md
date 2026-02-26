@@ -5,7 +5,7 @@
 **TANEBI（種火）** — タスク経験を種火として蓄え、蒸留された知識パターンをシステム全体に静かに反映するマルチエージェント実行フレームワーク。
 タスクを重ねるたびに蓄積される Learned Patterns が、次のタスクの品質を静かに押し上げる。
 
-claude-native アダプター（MVP）: `git clone → cd tanebi → claude` で起動。tmux不要、追加インフラ不要。
+claude-native モード（MVP）: `git clone → cd tanebi → claude` で起動。tmux不要、追加インフラ不要。
 
 ## Python 実行環境
 - python3コマンドの直接実行禁止
@@ -92,9 +92,9 @@ Python実装の対応表:
 |------|-----------|------|
 | イベント発火 | `tanebi.event_store.emit_event()` | |
 | タスク初期化 | `tanebi.event_store.create_task()` | |
-| Worker→Core通知 | `tanebi.core.callback.handle_callback()` | |
+| Worker→Core通知 | `tanebi.core.callback.handle_callback()` | **Listenerモード**専用: Worker完了時にCoreへ通知 |
 | 設定読み込み | `tanebi.config` | |
-| フロー制御ハンドラ | `tanebi.core.flow` | on_task_created 等 |
+| フロー制御ハンドラ | `tanebi.core.flow` | **claude_nativeモード**専用: on_task_created 等のCore フロー制御 |
 | Core Listener | `tanebi.core.listener.CoreListener` | *.completed 監視 |
 | シグナル検出・蓄積 | `tanebi.core.signal` | |
 | パターン蒸留 | `tanebi.core.distill` | |

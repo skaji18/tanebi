@@ -497,7 +497,6 @@ paths:
 | **パターンの自動適用強制** | LLM の判断を尊重。パターンは参考情報であり、指示ではない |
 | **リアルタイム学習** | タスク実行中にパターンを更新すると一貫性が崩れる。蒸留はタスク完了後 |
 | **Worker 個別の知識** | 知識はシステム共有。個別 Worker の知識サイロ化を防ぐ |
-| **ペルソナ（旧設計のWorkerプロファイル機能）の完全廃止（Phase 1 で）** | 後方互換性のため段階的に移行。急激な変更は避ける |
 
 ---
 
@@ -559,7 +558,8 @@ DECOMPOSE → EXECUTE → AGGREGATE → (EVOLVE)
 
 新フロー:
 ```
-DECOMPOSE → EXECUTE → AGGREGATE → SIGNAL_DETECT → (DISTILL if N≥K)
+DECOMPOSE → EXECUTE → AGGREGATE → LEARN
 ```
 
-SIGNAL_DETECT は毎タスク実行。DISTILL は N≥K 条件成立時のみ実行。
+LEARN は毎タスク実行（内訳: signal → distill → inject の3ステップ）。
+signal は毎タスク実行。distill は N≥K 条件成立時のみ実行。inject は蒸留済みパターンをコンテキストへ反映。

@@ -1,22 +1,22 @@
 # Getting Started with TANEBI
 
-## Prerequisites
+## 前提条件
 
 - **Python 3.10+** — `python3 --version` で確認
 - **Claude Code** — `claude --version` で確認 ([Install](https://claude.ai/code))
 - **Anthropic API Key** — `export ANTHROPIC_API_KEY=your_api_key_here` で設定 ([取得はこちら](https://console.anthropic.com/))
 - **Git**
 
-## Installation
+## インストール
 
-### 1. Clone
+### 1. クローン
 
 ```bash
 git clone https://github.com/skaji18/tanebi
 cd tanebi
 ```
 
-### 2. Setup
+### 2. セットアップ
 
 ```bash
 bash scripts/setup.sh
@@ -36,7 +36,7 @@ bash scripts/setup.sh
 export ANTHROPIC_API_KEY=your_api_key_here  # まだ設定していない場合
 ```
 
-## Your First Task
+## 最初のタスク実行
 
 TANEBI は Claude Code の `CLAUDE.md` を自動ロードすることで起動する。Claude Code は起動ディレクトリの CLAUDE.md を自動読込し、その指示に従う。
 
@@ -51,7 +51,7 @@ claude
 - 過去のコマンド数（`work/`）
 - タスク入力の案内
 
-タスクを入力するとフローが始まる（統一フロー: DECOMPOSE → EXECUTE → [CHECKPOINT] → AGGREGATE → LEARN）:
+タスクを入力すると、まず **REQUEST**（CLIからの起点）として依頼が `work/cmd_NNN/request.md` に保存される。その後、統一フロー（DECOMPOSE → EXECUTE → [CHECKPOINT] → AGGREGATE → LEARN）が実行される:
 
 1. **REQUEST** — `work/cmd_NNN/request.md` に依頼を保存
 2. **DECOMPOSE** — Decomposer がサブタスクに分解
@@ -68,12 +68,12 @@ claude
 - `src/ 以下のユニットテストをすべて書いてください`
 - `README.md の誤字を修正してください`
 
-## Architecture Overview
+## アーキテクチャ概要
 
 ```
 Core (CLAUDE.md orchestrator)
   ↓ *.requested
-Event Store (work/{cmd}/events/)   ←→   Executor (subprocess_worker)
+Event Store (work/{cmd}/events/)   ←→   Executor
   ↑ *.completed
 ```
 
@@ -83,7 +83,7 @@ Event Store (work/{cmd}/events/)   ←→   Executor (subprocess_worker)
 
 詳細は [design.md](design.md) を参照。
 
-## Next Steps
+## 次のステップ
 
 - **[design.md](design.md)** — アーキテクチャ全仕様、Learning Engine
 - **[executor-design.md](executor-design.md)** — 独自 Executor の実装方法
