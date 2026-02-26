@@ -9,9 +9,6 @@ knowledge/learned/**
 knowledge/episodes/**
 !knowledge/episodes/**/.gitkeep
 knowledge/_meta/*.yaml
-knowledge/few_shot_bank/*
-!knowledge/few_shot_bank/_format.md
-
 # OS files
 .DS_Store
 Thumbs.db

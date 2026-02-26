@@ -118,8 +118,6 @@ tanebi/
   knowledge/
     signals/             # Raw signals from worker/checkpoint events (per domain)
     learned/             # Distilled patterns injected into workers (per domain)
-    few_shot_bank/       # Successful examples by domain
-    episodes/            # Episode memory
     _meta/               # Metadata (distillation state, counters)
 
   work/                  # Task workspaces (work/cmd_001/, ...)
@@ -135,6 +133,11 @@ tanebi/
 | **[Getting Started](docs/getting-started.md)** | Installation and first task walkthrough |
 | **[Design Document](docs/design.md)** | Full architecture specification, Learning Engine details, EventStore abstractions, and event-driven architecture |
 | **[Executor Design](docs/executor-design.md)** | Executor implementation guide |
+| **[Checkpoint Design](docs/checkpoint-design.md)** | Checkpoint（品質チェック）機構の設計 |
+| **[Learning Engine](docs/learning-engine.md)** | Learning Engine（知識蓄積）の設計 |
+| **[Mutation Design](docs/mutation-design.md)** | Mutation（多様性確保）機構の設計 |
+| **[Native Flow](docs/native-flow.md)** | Claude Code native モードのフロー |
+| **[Listener Flow](docs/listener-flow.md)** | 外部 Listener モードのフロー |
 
 ### Reader's Guide
 - **New users**: README → docs/getting-started.md → docs/design.md

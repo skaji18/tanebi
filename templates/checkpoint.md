@@ -10,14 +10,20 @@ allowed-tools: [Read, Glob]
 
 ## payload の読み取り方
 
-このテンプレートはsystem promptとして渡される。具体的な値はUser prompt（payload）に含まれている。
-User promptには以下が含まれる:
+このテンプレートはsystem promptとして渡される。具体的な値はUser prompt（payload JSON）に含まれている。
+作業開始前にUser promptを読み取り、以下の値を把握せよ:
 
-- 元のリクエスト内容
-- 実行計画（plan.md の内容）
-- 各サブタスクの実行結果
+- `task_id` — コマンドID
+- `subtask_id` — チェックポイントサブタスクのID
+- `subtask_type` — `checkpoint`（固定）
+- `round` — ラウンド番号
+- `wave` — Wave番号
+- `request_path` — ユーザーの依頼内容ファイルパス（request.md）
+- `plan_path` — 実行計画ファイルパス（plan.round{N}.md）
+- `results_dir` — サブタスク結果ディレクトリパス（results/round{N}/）
+- `output_path` — チェックポイント結果の出力先パス
 
-これらを参照して評価を行うこと。
+`request_path`, `plan_path` のファイルと `results_dir` 以下の全 .md ファイルを読み取って評価を行うこと。
 
 ## 評価基準
 

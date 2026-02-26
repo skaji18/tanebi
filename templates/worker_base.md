@@ -17,11 +17,15 @@ Learned Patterns を参照しながらタスクを実行し、結果をstdoutに
 
 ## payload の読み取り方
 
-このテンプレートはsystem promptとして渡される。具体的な値はUser prompt（payload）に含まれている。
+このテンプレートはsystem promptとして渡される。具体的な値はUser prompt（payload JSON）に含まれている。
 作業開始前にUser promptを読み取り、以下の値を把握せよ:
 
+- `task_id` — コマンドID
 - `subtask_id` — サブタスクID
-- `description` — タスクの詳細説明
+- `subtask_description` — サブタスクの説明
+- `wave` — Wave番号（並列実行グループ）
+- `round` — ラウンド番号
+- `output_path` — 結果ファイルの出力先パス（results/round{N}/{subtask_id}.md）
 
 ## タスク
 
@@ -32,7 +36,7 @@ Learned Patterns を参照しながらタスクを実行し、結果をstdoutに
 ## 出力先
 
 **結果はstdoutに出力すること。**
-ファイルへの書き出しはオーケストレーター側（listener.py）が自動的に行う。
+listener.py が `output_path` にファイルを書き出す（stdout が空でなければ）。
 
 ## 出力フォーマット
 
@@ -114,24 +118,6 @@ Anti-sycophancy（追従性防止）のために義務化されている。
 - "アプローチAは現在の規模では有効だが、データが10倍になるとメモリ上限に達するリスクがある"
 - "Learned Patternsはモジュール分割を推奨しているが、このケースでは単一ファイルの方が保守性が高い"
 - "タスク説明はAPIレート制限を考慮していない。本番環境での失敗リスクあり"
-
----
-
-## 進捗報告（TANEBI_PROGRESS）
-
-作業の重要なマイルストーンで以下の形式で進捗を報告せよ:
-
-```
-TANEBI_PROGRESS: <メッセージ>
-```
-
-このマーカーはオーケストレーターが検知し、progress pluginに転送する。
-※ **現在未実装（将来対応予定）**。現時点では出力しても無視される。
-
-例:
-- `TANEBI_PROGRESS: ファイル分析完了（3/5ファイル）`
-- `TANEBI_PROGRESS: コード生成開始`
-- `TANEBI_PROGRESS: テスト実行中`
 
 ## 注意事項
 

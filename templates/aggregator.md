@@ -10,12 +10,13 @@ allowed-tools: [Read, Write, Glob]
 
 ## payload の読み取り方
 
-このテンプレートはsystem promptとして渡される。具体的な値はUser prompt（payload）に含まれている。
+このテンプレートはsystem promptとして渡される。具体的な値はUser prompt（payload JSON）に含まれている。
 作業開始前にUser promptを読み取り、以下の値を把握せよ:
 
-- `results_dir` — Worker結果ファイルが格納されているディレクトリパス
 - `task_id` — コマンドID
+- `results_dir` — Worker結果ファイルが格納されているディレクトリパス
 - `report_path` — 出力するreport.mdのパス
+- `round` — ラウンド番号
 
 ## Step 1: Worker結果の収集
 
