@@ -59,10 +59,10 @@ def test_on_worker_completed_wave_complete(tmp_tanebi_root):
     """全worker完了 → wave.completed 発火"""
     cmd_dir = _cmd_dir(tmp_tanebi_root)
     # execute.requested x2, worker.completed x2
-    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s1", "subtask_description": "desc", "wave": 1})
-    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s2", "subtask_description": "desc", "wave": 1})
-    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1})
-    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s2", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1})
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s1", "subtask_description": "desc", "wave": 1, "round": 1, "output_path": "results/round1/s1.md"})
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s2", "subtask_description": "desc", "wave": 1, "round": 1, "output_path": "results/round1/s2.md"})
+    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1, "round": 1})
+    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s2", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1, "round": 1})
 
     on_worker_completed(cmd_dir, {"wave": 1})
 
@@ -76,9 +76,9 @@ def test_on_worker_completed_wave_complete(tmp_tanebi_root):
 def test_on_worker_completed_not_yet(tmp_tanebi_root):
     """未完了 → wave.completed 発火しない"""
     cmd_dir = _cmd_dir(tmp_tanebi_root)
-    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s1", "subtask_description": "desc", "wave": 1})
-    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s2", "subtask_description": "desc", "wave": 1})
-    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1})
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s1", "subtask_description": "desc", "wave": 1, "round": 1, "output_path": "results/round1/s1.md"})
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "s2", "subtask_description": "desc", "wave": 1, "round": 1, "output_path": "results/round1/s2.md"})
+    emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1, "round": 1})
     # s2はまだ完了していない
 
     on_worker_completed(cmd_dir, {"wave": 1})
@@ -251,12 +251,12 @@ def test_all_workers_complete_filters_by_round(tmp_tanebi_root):
     cmd_dir = _cmd_dir(tmp_tanebi_root)
 
     # round=1 の execute.requested と worker.completed（未完了: 2リクエスト1完了）
-    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "r1s1", "subtask_description": "desc", "wave": 1, "round": 1})
-    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "r1s2", "subtask_description": "desc", "wave": 1, "round": 1})
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "r1s1", "subtask_description": "desc", "wave": 1, "round": 1, "output_path": "results/round1/r1s1.md"})
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "r1s2", "subtask_description": "desc", "wave": 1, "round": 1, "output_path": "results/round1/r1s2.md"})
     emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "r1s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1, "round": 1})
 
     # round=2 の execute.requested と worker.completed（完了: 1リクエスト1完了）
-    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "r2s1", "subtask_description": "desc", "wave": 1, "round": 2})
+    emit_event(cmd_dir, "execute.requested", {"task_id": "cmd_001", "subtask_id": "r2s1", "subtask_description": "desc", "wave": 1, "round": 2, "output_path": "results/round2/r2s1.md"})
     emit_event(cmd_dir, "worker.completed", {"task_id": "cmd_001", "subtask_id": "r2s1", "status": "success", "quality": "GREEN", "domain": "testing", "wave": 1, "round": 2})
 
     # round=2 の on_worker_completed → wave.completed が発火されるべき

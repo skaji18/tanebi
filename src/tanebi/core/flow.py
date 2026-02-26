@@ -260,24 +260,27 @@ def on_task_created(cmd_dir: Path, payload: dict) -> None:
         {
             "task_id": cmd_dir.name,
             "request_path": str(cmd_dir / "request.md"),
-            "plan_output_path": str(cmd_dir / "plan.md"),
+            "plan_output_path": str(cmd_dir / "plan.round1.md"),
+            "round": 1,
         },
     )
 
 
 def _parse_plan(cmd_dir: Path, payload: dict) -> list[dict]:
-    """plan.md または payload["plan"] からサブタスクリストを取得する。
+    """plan.round{N}.md（または plan.md フォールバック）からサブタスクリストを取得する。
 
     planがない or wave=1タスクがなければ [] を返す。
     """
     # payload に plan キーがあればそれを優先
     plan = payload.get("plan")
     if plan is None:
-        plan_path = cmd_dir / "plan.md"
+        round_num = payload.get("round", 1)
+        plan_path = cmd_dir / f"plan.round{round_num}.md"
         if not plan_path.exists():
-            raise RuntimeError(f"plan.md not found: {plan_path}")
+            plan_path = cmd_dir / "plan.md"
+        if not plan_path.exists():
+            raise RuntimeError(f"plan not found: {cmd_dir}")
         content = plan_path.read_text(encoding="utf-8")
-        # 最小限パース: YAMLブロックを試みる
         try:
             plan = yaml.safe_load(content)
         except yaml.YAMLError:
@@ -304,16 +307,22 @@ def on_task_decomposed(cmd_dir: Path, payload: dict) -> None:
     if not wave1_subtasks:
         return
 
+    round_num = payload.get("round", 1)
+    results_dir = cmd_dir / "results" / f"round{round_num}"
     for subtask in wave1_subtasks:
+        subtask_id = subtask["id"]
         emit_event(
             cmd_dir,
             "execute.requested",
             {
                 "task_id": cmd_dir.name,
-                "subtask_id": subtask["id"],
+                "subtask_id": subtask_id,
                 "subtask_description": subtask.get("description", ""),
                 "wave": 1,
+                "round": round_num,
+                "output_path": str(results_dir / f"{subtask_id}.md"),
             },
+            round=round_num,
         )
 
 
@@ -340,7 +349,10 @@ def _parse_wave_subtasks(cmd_dir: Path, payload: dict, wave: int) -> list[dict]:
     """plan から指定 wave のサブタスクリストを取得する。"""
     plan = payload.get("plan")
     if plan is None:
-        plan_path = cmd_dir / "plan.md"
+        round_num = payload.get("round", 1)
+        plan_path = cmd_dir / f"plan.round{round_num}.md"
+        if not plan_path.exists():
+            plan_path = cmd_dir / "plan.md"
         if not plan_path.exists():
             return []
         content = plan_path.read_text(encoding="utf-8")
@@ -439,16 +451,19 @@ def on_wave_completed(cmd_dir: Path, payload: dict) -> None:
             next_subtasks = _parse_wave_subtasks(cmd_dir, payload, next_wave)
 
         if next_subtasks:
+            results_dir = cmd_dir / "results" / f"round{round_num}"
             for subtask in next_subtasks:
+                subtask_id = subtask["id"]
                 emit_event(
                     cmd_dir,
                     "execute.requested",
                     {
                         "task_id": task_id,
-                        "subtask_id": subtask["id"],
+                        "subtask_id": subtask_id,
                         "subtask_description": subtask.get("description", ""),
                         "wave": next_wave,
                         "round": round_num,
+                        "output_path": str(results_dir / f"{subtask_id}.md"),
                     },
                     round=round_num,
                 )

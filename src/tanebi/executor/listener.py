@@ -1,6 +1,7 @@
 """TANEBI Executor Listener — *.requested イベント監視・処理"""
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -103,7 +104,7 @@ class ExecutorListener:
             self._run_aggregate(cmd_dir, payload)
 
     def _run_decompose(self, cmd_dir: Path, payload: dict) -> None:
-        """分解処理 — stub実装（実際の claude -p 呼び出し）"""
+        """分解処理 — claude -p で plan を生成し、ファイル書き出し + イベント発火"""
         from tanebi.executor.worker import run_claude_p, read_template, WorkerError
         from tanebi.event_store import emit_event
         try:
@@ -111,15 +112,32 @@ class ExecutorListener:
                 system = read_template("decomposer.md")
             except FileNotFoundError:
                 system = "You are a task decomposer."
-            result = run_claude_p(system, f"Decompose: {payload.get('request_path', '')}")
+            round_num = payload.get("round", 1)
+            plan_output_path = payload.get(
+                "plan_output_path",
+                str(cmd_dir / f"plan.round{round_num}.md"),
+            )
+            result = run_claude_p(system, json.dumps(payload, ensure_ascii=False))
+            # plan ファイル書き出し（agent が Write で書いていなければ stdout から書く）
+            plan_path = Path(plan_output_path)
+            if not plan_path.exists():
+                plan_path.parent.mkdir(parents=True, exist_ok=True)
+                plan_path.write_text(result, encoding="utf-8")
             emit_event(cmd_dir, "task.decomposed", {
-                "task_id": cmd_dir.name, "plan": {}
-            })
+                "task_id": cmd_dir.name,
+                "plan_path": str(plan_path),
+                "round": round_num,
+            }, round=round_num)
         except (WorkerError, Exception) as e:
+            emit_event(cmd_dir, "error.worker_failed", {
+                "task_id": cmd_dir.name,
+                "subtask_id": "decompose",
+                "error_detail": str(e),
+            })
             print(f"Decompose error for {cmd_dir.name}: {e}", file=sys.stderr)
 
     def _run_execute(self, cmd_dir: Path, payload: dict) -> None:
-        """実行処理 — stub実装"""
+        """実行処理 — claude -p で subtask を実行し、結果書き出し + イベント発火"""
         from tanebi.executor.worker import run_claude_p, read_template, WorkerError
         from tanebi.event_store import emit_event
         try:
@@ -131,19 +149,25 @@ class ExecutorListener:
                 system = "You are a checkpoint reviewer." if subtask_type == "checkpoint" else "You are a worker."
             round_num = payload.get("round", 1)
             wave = payload.get("wave", 1)
+            subtask_id = payload.get("subtask_id", "unknown")
             results_dir = cmd_dir / "results" / f"round{round_num}"
             results_dir.mkdir(parents=True, exist_ok=True)
             emit_event(cmd_dir, "worker.started", {
                 "task_id": cmd_dir.name,
-                "subtask_id": payload.get("subtask_id", ""),
+                "subtask_id": subtask_id,
                 "wave": wave,
                 "round": round_num,
             }, round=round_num)
-            result = run_claude_p(system, str(payload))
-            # 結果ファイルを results/round{N}/ に書き出す
-            subtask_id = payload.get("subtask_id", "unknown")
-            result_file = results_dir / f"{subtask_id}.md"
-            result_file.write_text(result, encoding="utf-8")
+            result = run_claude_p(system, json.dumps(payload, ensure_ascii=False))
+            # 結果ファイルを output_path or results/round{N}/ に書き出す
+            output_path = payload.get(
+                "output_path",
+                str(results_dir / f"{subtask_id}.md"),
+            )
+            result_file = Path(output_path)
+            if not result_file.exists():
+                result_file.parent.mkdir(parents=True, exist_ok=True)
+                result_file.write_text(result, encoding="utf-8")
             fm = parse_worker_frontmatter(result)
             emit_event(cmd_dir, "worker.completed", {
                 "task_id": cmd_dir.name,
@@ -151,6 +175,8 @@ class ExecutorListener:
                 "status": fm["status"],
                 "quality": fm["quality"],
                 "domain": fm["domain"],
+                "wave": wave,
+                "round": round_num,
             }, round=round_num)
         except WorkerError as e:
             emit_event(cmd_dir, "error.worker_failed", {
@@ -161,7 +187,7 @@ class ExecutorListener:
             # 例外を再raiseしない（スレッドが死なないように）
 
     def _run_aggregate(self, cmd_dir: Path, payload: dict) -> None:
-        """統合処理 — stub実装"""
+        """統合処理 — claude -p で結果を統合し、レポート書き出し + イベント発火"""
         from tanebi.executor.worker import run_claude_p, read_template, WorkerError
         from tanebi.event_store import emit_event
         try:
@@ -169,12 +195,25 @@ class ExecutorListener:
                 system = read_template("aggregator.md")
             except FileNotFoundError:
                 system = "You are an aggregator."
-            result = run_claude_p(system, str(payload))
-            report_path = cmd_dir / "report.md"
-            report_path.write_text(result, encoding="utf-8")
+            round_num = payload.get("round", 1)
+            report_output_path = payload.get(
+                "report_path",
+                str(cmd_dir / "report.md"),
+            )
+            result = run_claude_p(system, json.dumps(payload, ensure_ascii=False))
+            report_path = Path(report_output_path)
+            if not report_path.exists():
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(result, encoding="utf-8")
             emit_event(cmd_dir, "task.aggregated", {
                 "task_id": cmd_dir.name,
                 "report_path": str(report_path),
+                "quality_summary": {},
             })
         except (WorkerError, Exception) as e:
+            emit_event(cmd_dir, "error.worker_failed", {
+                "task_id": cmd_dir.name,
+                "subtask_id": "aggregate",
+                "error_detail": str(e),
+            })
             print(f"Aggregate error for {cmd_dir.name}: {e}", file=sys.stderr)

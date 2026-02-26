@@ -10,7 +10,6 @@ events:
     payload:
       task_id: string
       request_summary: string
-      timestamp: string  # ISO 8601
 
   # ===== Core → Executor =====
 
@@ -20,8 +19,9 @@ events:
     payload:
       task_id: string
       request_path: string      # work/{task_id}/request.md
-      plan_output_path: string  # work/{task_id}/plan.md
-      timestamp: string
+      plan_output_path: string  # work/{task_id}/plan.round{N}.md
+      round: integer            # ラウンド番号（初回=1, re-decompose=2+）
+      checkpoint_feedback: "object?"  # re-decompose 時のみ（前ラウンドの失敗情報）
 
   execute.requested:
     description: "CoreがWorker実行を依頼するイベント"
@@ -31,16 +31,17 @@ events:
       subtask_id: string
       subtask_description: string  # サブタスクの説明
       wave: integer
-      timestamp: string
+      round: integer              # ラウンド番号
+      output_path: string         # Worker の出力先パス（results/round{N}/{subtask_id}.md）
 
   aggregate.requested:
     description: "CoreがAggregateを依頼するイベント"
     direction: "Core → Event Store（Executor読取）"
     payload:
       task_id: string
-      results_dir: string       # work/{task_id}/results/
+      results_dir: string       # work/{task_id}/results/round{N}/
       report_path: string       # work/{task_id}/report.md
-      timestamp: string
+      round: integer            # ラウンド番号
 
   # ===== Executor → Core =====
 
@@ -48,9 +49,8 @@ events:
     description: "Decompose完了時"
     payload:
       task_id: string
-      plan:
-        subtasks: array
-        waves: integer
+      plan_path: string         # plan.round{N}.md のパス
+      round: integer            # ラウンド番号
 
   worker.started:
     description: "Worker起動時"
@@ -58,6 +58,7 @@ events:
       task_id: string
       subtask_id: string
       wave: integer
+      round: integer            # ラウンド番号
 
   worker.progress:
     description: "Worker中間出力時"
@@ -75,6 +76,8 @@ events:
       status: "enum[success, failure]"
       quality: "enum[GREEN, YELLOW, RED]"
       domain: string
+      wave: integer
+      round: integer
 
   # ===== Core内部 =====
 
@@ -83,6 +86,7 @@ events:
     payload:
       task_id: string
       wave: integer
+      round: integer
       results_summary: object
 
   task.aggregated:
@@ -107,7 +111,6 @@ events:
       plan_path: string         # plan.round{N}.md のパス
       results_dir: string       # results/round{N}/ のパス
       output_path: string       # checkpoint 結果の出力先
-      timestamp: string
 
   checkpoint.completed:
     description: "flow.py が checkpoint verdict 集約後に発火"
@@ -136,7 +139,6 @@ events:
       domain: string
       signal_count: integer
       signal_ids: array
-      timestamp: string
 
   distill.completed:
     description: "蒸留処理の完了通知"
@@ -145,4 +147,3 @@ events:
       domain: string
       patterns_created: array
       confidence: number
-      timestamp: string
