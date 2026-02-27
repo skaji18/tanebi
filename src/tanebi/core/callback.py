@@ -11,18 +11,36 @@ from tanebi.event_store import emit_event
 __all__ = ["handle_callback", "resolve_cmd_dir", "parse_callback_args"]
 
 
+def _auto_type(value: str):
+    """文字列を適切な型に自動変換する。
+
+    CLI の key=value は全て文字列になるため、
+    flow.py の比較演算（wave == 1 等）が壊れないよう数値型に変換する。
+    """
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
 def parse_callback_args(args: list[str]) -> dict:
     """"key=value" 形式の引数リストを dict に変換する。
 
+    数値風の値は int/float に自動変換される。
+
     例:
-        ["event_type=worker.completed", "status=GREEN"]
-        → {"event_type": "worker.completed", "status": "GREEN"}
+        ["event_type=worker.completed", "status=GREEN", "wave=1"]
+        → {"event_type": "worker.completed", "status": "GREEN", "wave": 1}
     """
     result = {}
     for arg in args:
         if "=" in arg:
             key, value = arg.split("=", 1)
-            result[key] = value
+            result[key] = _auto_type(value)
     return result
 
 

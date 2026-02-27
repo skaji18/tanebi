@@ -1,6 +1,6 @@
 ---
 description: TANEBI Decomposer — タスク分解とLearned Patterns注入
-allowed-tools: [Read, Write, Glob]
+allowed-tools: [Read, Write, Glob, Bash]
 ---
 
 # TANEBI Decomposer
@@ -75,12 +75,30 @@ plan:
 - 同一wave内のタスクは並列実行可能
 - wave Nのタスクはwave N-1が全て完了してから開始
 
+## Python 実行環境
+
+- python3コマンドの直接実行禁止
+- tanebi CLI実行: `.venv/bin/tanebi <コマンド>`
+
 ## 完了確認
 
 plan.md を書き出したら、以下を確認してください:
 - 全サブタスクにrole が割り当てられているか
 - waveの順序が依存関係と矛盾していないか
 - output_pathが一意（重複なし）か
+
+## イベント発火（必須）
+
+plan ファイル書き出し・完了確認の後、以下のコマンドで `task.decomposed` イベントを**必ず**発火すること。
+**この操作は省略禁止。emitが実行されないとタスクフローが停止する。**
+
+```bash
+.venv/bin/tanebi emit <task_id> task.decomposed \
+  plan_path=<plan_output_path> \
+  round=<round>
+```
+
+- `task_id`, `plan_output_path`, `round` は payload から取得した値を使用
 
 ## チェックポイントサブタスクのルール
 

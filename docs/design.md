@@ -102,6 +102,8 @@ Core の役割は「次に何をするかを決める」こと。実際の実行
 
 **フロー制御について**: DECOMPOSE→EXECUTE→[CHECKPOINT]→AGGREGATE→LEARN のフロー制御は Core 層の責務（フロー決定ロジック）である。LEARN は signal → distill → inject の3ステップからなる。Core が `*.completed` イベントを受けて次の `*.requested` イベントを発行する。
 
+**タスクルーティングについて**: リクエストをTANEBIフローに乗せるか直接応答するかの判定基準は `docs/routing.md` を参照。フロントエンド実装に依存しないフレームワーク共通の設計である。
+
 #### Event Store（通信基盤 + タスク管理）
 
 Core と Executor をつなぐ唯一の接点。詳細は Section 3.2 および Section 4。

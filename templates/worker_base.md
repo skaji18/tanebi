@@ -27,6 +27,11 @@ Learned Patterns を参照しながらタスクを実行し、結果をstdoutに
 - `round` — ラウンド番号
 - `output_path` — 結果ファイルの出力先パス（results/round{N}/{subtask_id}.md）
 
+## Python 実行環境
+
+- python3コマンドの直接実行禁止
+- tanebi CLI実行: `.venv/bin/tanebi <コマンド>`
+
 ## タスク
 
 **サブタスクID**: User promptから `subtask_id` を読み取ること。
@@ -35,8 +40,8 @@ Learned Patterns を参照しながらタスクを実行し、結果をstdoutに
 
 ## 出力先
 
-**結果はstdoutに出力すること。**
-listener.py が `output_path` にファイルを書き出す（stdout が空でなければ）。
+**結果は `output_path` に Write tool で書き出すこと。**
+加えて、stdoutにも同じ内容を出力すること（フォールバック用）。
 
 ## 出力フォーマット
 
@@ -119,7 +124,32 @@ Anti-sycophancy（追従性防止）のために義務化されている。
 - "Learned Patternsはモジュール分割を推奨しているが、このケースでは単一ファイルの方が保守性が高い"
 - "タスク説明はAPIレート制限を考慮していない。本番環境での失敗リスクあり"
 
+## イベント発火（必須）
+
+output_path への書き出し完了後、以下のコマンドで `worker.completed` イベントを**必ず**発火すること。
+**この操作は省略禁止。emitが実行されないとタスクフローが停止する。**
+
+```bash
+.venv/bin/tanebi emit <task_id> worker.completed \
+  subtask_id=<subtask_id> \
+  status=<status> \
+  quality=<quality> \
+  domain=<domain> \
+  wave=<wave> \
+  round=<round>
+```
+
+- `task_id`, `subtask_id`, `wave`, `round` は payload から取得した値を使用
+- `status`, `quality`, `domain` は出力フォーマットの YAML frontmatter に記載した値と同じものを使用
+
+## 実行順序（厳守）
+
+1. タスクを実行する
+2. 結果を `output_path` に Write tool で書き出す
+3. **`worker.completed` イベントを発火する**（Bash tool）
+4. stdoutに結果を出力する
+
 ## 注意事項
 
 - quality の自己評価は正直に。不完全ならYELLOWまたはREDを選択
-- stdoutへの結果出力を最後の操作とすること
+- イベント発火は省略禁止。失敗しても成功しても必ず発火すること

@@ -1,6 +1,6 @@
 ---
 description: TANEBI Aggregator — Worker結果統合とレポート生成
-allowed-tools: [Read, Write, Glob]
+allowed-tools: [Read, Write, Glob, Bash]
 ---
 
 # TANEBI Aggregator
@@ -76,9 +76,28 @@ quality_summary:
 [YELLOW/REDのタスクについて改善余地を記載、なければ省略]
 ```
 
+## Python 実行環境
+
+- python3コマンドの直接実行禁止
+- tanebi CLI実行: `.venv/bin/tanebi <コマンド>`
+
 ## 完了確認
 
 report.md を書き出したら、以下を確認してください:
 - 全サブタスクの結果が集計されているか
 - 品質サマリーの数値が合計と一致するか
 - ユーザーが読んで全体像を把握できる内容か
+
+## イベント発火（必須）
+
+report ファイル書き出し・完了確認の後、以下のコマンドで `task.aggregated` イベントを**必ず**発火すること。
+**この操作は省略禁止。emitが実行されないとタスクフローが停止する。**
+
+```bash
+.venv/bin/tanebi emit <task_id> task.aggregated \
+  report_path=<report_path> \
+  quality_summary='{}'
+```
+
+- `task_id`, `report_path` は payload から取得した値を使用
+- `quality_summary` は report.md に含めた品質サマリーの JSON 文字列（省略時は `'{}'`）

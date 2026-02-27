@@ -1,6 +1,6 @@
 ---
 description: TANEBI Checkpoint Worker — サブタスク結果の品質レビュー
-allowed-tools: [Read, Glob]
+allowed-tools: [Read, Glob, Bash]
 ---
 
 # Checkpoint Worker
@@ -98,6 +98,28 @@ summary: |
 ```
 
 `verdict` はいずれかのサブタスクが失敗した場合 `fail` とする（any_fail ポリシー）。
+
+## Python 実行環境
+
+- python3コマンドの直接実行禁止
+- tanebi CLI実行: `.venv/bin/tanebi <コマンド>`
+
+## イベント発火（必須）
+
+チェックポイント結果を `output_path` に書き出した後、以下のコマンドで `worker.completed` イベントを**必ず**発火すること。
+**この操作は省略禁止。emitが実行されないとタスクフローが停止する。**
+
+```bash
+.venv/bin/tanebi emit <task_id> worker.completed \
+  subtask_id=<subtask_id> \
+  status=success \
+  quality=GREEN \
+  domain=checkpoint \
+  wave=<wave> \
+  round=<round>
+```
+
+- `task_id`, `subtask_id`, `wave`, `round` は payload から取得した値を使用
 
 ## attribution の意味
 

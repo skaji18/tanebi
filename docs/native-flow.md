@@ -95,10 +95,13 @@ ls work/cmd_001/plan.round1.md
 
 ### 2-4. task.decomposed イベント発火
 
-```bash
-.venv/bin/tanebi emit cmd_001 task.decomposed \
-  plan_path=work/cmd_001/plan.round1.md \
-  round=1
+**Decomposer 自身がイベントを発火する。** テンプレートに emit 手順が含まれているため、
+オーケストレーターは emit を行わない。Decomposer が完了していれば以下のイベントが存在するはず:
+
+```yaml
+# 確認コマンド（emit はしない、存在確認のみ）
+# event: task.decomposed
+# payload: plan_path=work/cmd_001/plan.round1.md, round=1
 ```
 
 ---
@@ -159,14 +162,13 @@ ls work/cmd_001/results/round1/subtask_002.md
 
 ### 3-4. worker.completed イベント発火
 
-```bash
-.venv/bin/tanebi emit cmd_001 worker.completed \
-  subtask_id=subtask_001 \
-  status=success \
-  quality=GREEN \
-  domain=backend \
-  wave=1 \
-  round=1
+**Worker 自身がイベントを発火する。** テンプレートに emit 手順が含まれているため、
+オーケストレーターは emit を行わない。Worker が完了していれば以下のイベントが存在するはず:
+
+```yaml
+# 確認（emit はしない、存在確認のみ）
+# event: worker.completed
+# payload: subtask_id=subtask_001, status=success, quality=GREEN, domain=backend, wave=1, round=1
 ```
 
 ---
@@ -279,10 +281,13 @@ ls work/cmd_001/report.md
 
 ### 4-4. task.aggregated イベント発火
 
-```bash
-.venv/bin/tanebi emit cmd_001 task.aggregated \
-  report_path=work/cmd_001/report.md \
-  quality_summary={}
+**Aggregator 自身がイベントを発火する。** テンプレートに emit 手順が含まれているため、
+オーケストレーターは emit を行わない。Aggregator が完了していれば以下のイベントが存在するはず:
+
+```yaml
+# 確認（emit はしない、存在確認のみ）
+# event: task.aggregated
+# payload: report_path=work/cmd_001/report.md, quality_summary={}
 ```
 
 ---
