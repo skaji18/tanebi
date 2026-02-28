@@ -69,20 +69,22 @@ Decomposer を Task tool で起動し、タスクを分解させる。
 
 ### 2-2. Decomposer 起動（Task tool）
 
-`templates/decomposer.md` を Read tool で読み取り、以下のプレースホルダーを展開して
-Task tool の prompt として使用する:
+`decomposer` カスタムエージェントを `subagent_type` で指定し、Task tool で起動する。
+プレースホルダー展開済みの payload を prompt（user message）として渡す:
 
-- `{REQUEST_PATH}` → `work/cmd_NNN/request.md` の絶対パス
-- `{LEARNED_PATTERNS_PATHS}` → `knowledge/learned/` 以下の関連パターンファイルパス一覧（なければ "なし"）
-- `{PLAN_PATH}` → `work/cmd_NNN/plan.round1.md` の絶対パス
-- `{CMD_ID}` → cmd_NNN
-- `{TIMESTAMP}` → ISO8601形式の現在時刻
+```
+task_id: cmd_NNN
+request_path: /絶対パス/work/cmd_NNN/request.md
+plan_output_path: /絶対パス/work/cmd_NNN/plan.round1.md
+round: 1
+learned_patterns_paths: knowledge/learned/ 以下の関連ファイルパス一覧（なければ "なし"）
+```
 
-**Task tool 起動ルール（必須）:**
+**Task tool 起動パラメータ:**
 
-- **`run_in_background: true` を必ず指定する**
-  - フォアグラウンド実行は subagent の出力が親コンテキストに注入されるため禁止
-  - パス受け渡し係原則: Decomposer の出力はファイル経由でやり取りする
+- `subagent_type: "decomposer"` — カスタムエージェントを指定
+- `prompt`: 上記 payload テキスト（プレースホルダー展開済み）
+- **`run_in_background` は不要**: エージェント定義の `background: true` により自動的にバックグラウンド実行される
 - Step 2 は完了を待たずに **TaskOutput tool を使わない**
   - 完了確認はファイルの存在確認のみ
 
@@ -95,7 +97,7 @@ ls work/cmd_001/plan.round1.md
 
 ### 2-4. task.decomposed イベント発火
 
-**Decomposer 自身がイベントを発火する。** テンプレートに emit 手順が含まれているため、
+**Decomposer 自身がイベントを発火する。** エージェント定義に emit 手順が含まれているため、
 オーケストレーターは emit を行わない。Decomposer が完了していれば以下のイベントが存在するはず:
 
 ```yaml
@@ -132,18 +134,24 @@ ls work/cmd_001/plan.round1.md
 
 ### 3-2. Worker 起動（Task tool 並列起動）
 
-`templates/worker_base.md` を Read tool で読み取り、以下のプレースホルダーを展開:
+`tanebi-worker` カスタムエージェントを `subagent_type` で指定し、Task tool で起動する。
+プレースホルダー展開済みの payload を prompt（user message）として渡す:
 
-- `{LEARNED_PATTERNS_PATHS}` → `knowledge/learned/{domain}/` 以下の関連ファイルパス一覧（なければ "なし"）
-- `{SUBTASK_ID}` → サブタスクID
-- `{TASK_DESCRIPTION}` → サブタスクの説明
-- `{OUTPUT_PATH}` → `work/cmd_NNN/results/round1/{SUBTASK_ID}.md` の絶対パス
+```
+task_id: cmd_NNN
+subtask_id: subtask_001
+subtask_description: サブタスクの説明
+wave: 1
+round: 1
+output_path: /絶対パス/work/cmd_NNN/results/round1/subtask_001.md
+learned_patterns_paths: knowledge/learned/{domain}/ 以下の関連ファイルパス一覧（なければ "なし"）
+```
 
-**Task tool 起動ルール（必須）:**
+**Task tool 起動パラメータ:**
 
-- **`run_in_background: true` を必ず指定する**（フォアグラウンド実行禁止）
-  - フォアグラウンド実行はsubagentの結果が親オーケストレーターのコンテキストに自動注入されるため禁止
-  - コンテキスト爆発の原因となり、パス受け渡し係原則に反する
+- `subagent_type: "tanebi-worker"` — カスタムエージェントを指定
+- `prompt`: 上記 payload テキスト（プレースホルダー展開済み）
+- **`run_in_background` は不要**: エージェント定義の `background: true` により自動的にバックグラウンド実行される
 - **同一 wave 内のサブタスクは同一メッセージで複数 Task tool 呼び出し**（並列起動）
 - Wave N が全て完了してから Wave N+1 を開始する
 
@@ -158,11 +166,10 @@ ls work/cmd_001/results/round1/subtask_002.md
 **禁止事項:**
 
 - TaskOutput tool で Worker 結果を読み取ること
-- フォアグラウンド Task tool 呼び出し（`run_in_background: true` 省略）
 
 ### 3-4. worker.completed イベント発火
 
-**Worker 自身がイベントを発火する。** テンプレートに emit 手順が含まれているため、
+**Worker 自身がイベントを発火する。** エージェント定義に emit 手順が含まれているため、
 オーケストレーターは emit を行わない。Worker が完了していれば以下のイベントが存在するはず:
 
 ```yaml
@@ -200,7 +207,23 @@ ls work/cmd_001/results/round1/subtask_002.md
 
 ### 3.5-2. Checkpoint Worker 起動（Task tool）
 
-`templates/checkpoint.md` を system prompt として Task tool で起動する。
+`checkpoint` カスタムエージェントを `subagent_type` で指定し、Task tool で起動する。
+payload を prompt として渡す:
+
+```
+task_id: cmd_NNN
+subtask_id: checkpoint_001
+subtask_type: checkpoint
+round: 1
+wave: <最終wave+1>
+request_path: /絶対パス/work/cmd_NNN/request.md
+plan_path: /絶対パス/work/cmd_NNN/plan.round1.md
+results_dir: /絶対パス/work/cmd_NNN/results/round1
+output_path: /絶対パス/work/cmd_NNN/results/round1/checkpoint_001.md
+```
+
+- `subagent_type: "checkpoint"` — カスタムエージェントを指定
+- **`run_in_background` は不要**: エージェント定義の `background: true` により自動的にバックグラウンド実行される
 
 ```bash
 # 完了確認: checkpoint 結果ファイルの存在確認
@@ -257,17 +280,21 @@ summary: "全体の要約"
 
 ### 4-2. Aggregator 起動（Task tool）
 
-`templates/aggregator.md` を Read tool で読み取り、以下のプレースホルダーを展開:
+`aggregator` カスタムエージェントを `subagent_type` で指定し、Task tool で起動する。
+プレースホルダー展開済みの payload を prompt（user message）として渡す:
 
-- `{RESULTS_DIR}` → `work/cmd_NNN/results/round{N}/` の絶対パス
-- `{REPORT_PATH}` → `work/cmd_NNN/report.md` の絶対パス
-- `{CMD_ID}` → cmd_NNN
-- `{TIMESTAMP}` → ISO8601形式の現在時刻
+```
+task_id: cmd_NNN
+results_dir: /絶対パス/work/cmd_NNN/results/round{N}/
+report_path: /絶対パス/work/cmd_NNN/report.md
+round: 1
+```
 
-**Task tool 起動ルール（必須）:**
+**Task tool 起動パラメータ:**
 
-- **`run_in_background: true` を必ず指定する**
-  - フォアグラウンド実行は subagent 出力が親コンテキストに注入されるため禁止
+- `subagent_type: "aggregator"` — カスタムエージェントを指定
+- `prompt`: 上記 payload テキスト（プレースホルダー展開済み）
+- **`run_in_background` は不要**: エージェント定義の `background: true` により自動的にバックグラウンド実行される
 
 **パス受け渡し係原則（再確認）**: オーケストレーター自身は `results/` ファイルの内容を読まない。
 Aggregator にディレクトリパスを渡すだけ。Aggregator が内容を読んで統合レポートを生成する。
@@ -281,7 +308,7 @@ ls work/cmd_001/report.md
 
 ### 4-4. task.aggregated イベント発火
 
-**Aggregator 自身がイベントを発火する。** テンプレートに emit 手順が含まれているため、
+**Aggregator 自身がイベントを発火する。** エージェント定義に emit 手順が含まれているため、
 オーケストレーターは emit を行わない。Aggregator が完了していれば以下のイベントが存在するはず:
 
 ```yaml
@@ -310,8 +337,8 @@ Aggregator 完了後、Learning Engine を実行する。
 3. **Distillation**（N≥K ルール）: 同一ドメインでK件以上のシグナルが収束したら
    汎化パターンに蒸留 → `knowledge/learned/{domain}/`
 
-4. **Injection**: 蒸留済みパターンを次回の Decomposer/Worker テンプレートに注入する。
-   `{LEARNED_PATTERNS_PATHS}` プレースホルダーが該当ドメインのパスに展開される。
+4. **Injection**: 蒸留済みパターンを次回タスクに引き継ぐ。
+   次回の Decomposer/Worker 起動時に payload の `learned_patterns_paths` として渡す。
 
 ---
 
