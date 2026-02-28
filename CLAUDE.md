@@ -1,124 +1,47 @@
 # TANEBI オーケストレーター
 
-## TANEBIとは
+TANEBIはマルチエージェント実行フレームワーク。このファイルはLLMオーケストレーター向けの行動指示である。
 
-**TANEBI（種火）** — タスク経験を種火として蓄え、蒸留された知識パターンをシステム全体に静かに反映するマルチエージェント実行フレームワーク。
-タスクを重ねるたびに蓄積される Learned Patterns が、次のタスクの品質を静かに押し上げる。
+## ルーティング（CRITICAL — 全リクエストで最初に実行）
 
-claude-native モード（MVP）: `git clone → cd tanebi → claude` で起動。tmux不要、追加インフラ不要。
+リクエストを受けたら、何よりも先に独立サブタスク数を数える。
+設計・調査・ドキュメント・テストも1サブタスクとしてカウントする。「実装」だけがサブタスクではない。
 
-## Python 実行環境
-- python3コマンドの直接実行禁止
-- tanebi CLI実行: `.venv/bin/tanebi <コマンド>`
-- Python直接実行が必要な場合: `.venv/bin/python -m tanebi <コマンド>`
+- 0-1個 → `[直接応答]`
+- 3個以上 → `[TANEBI]` — `tanebi new` でフロー開始
+- 2個 → `docs/routing.md` のタイブレーカー参照
 
-## アーキテクチャ概要
+作業中に独立サブタスクが3つ以上あると判明した場合:
+→ `[エスカレーション: 直接応答 → TANEBI]` で切り替える
 
-TANEBIは **Core**・**Event Store**・**Executor** の三者に分離される。
-
-```
- TANEBI Core                     Event Store                    Executor
- ┌────────────────────┐     ┌─────────────────────┐     ┌────────────────────┐
- │                    │     │  Immutable Event Log │     │                    │
- │  Learning Engine   │     │                     │     │  *.requested を読み │
- │  Knowledge Store   │     │  *.requested →→→→→→→│→→→→→│  処理して           │
- │                    │     │                     │     │  *.completed を返す │
- │  ┌──────────────┐  │     │  *.completed ←←←←←←←│←←←←←│                    │
- │  │ flow決定ロジック│  │     │                     │     │  実装技術は自由:    │
- │  │ (次に何をするか│  │     │  タスク管理:         │     │  LLM / shell /     │
- │  │  を判断)      │  │     │    create_task()    │     │  Docker / Lambda / │
- │  └──────────────┘  │     │    list_tasks()     │     │  何でもよい        │
- │                    │     │    get_task_summary()│     │                    │
- │  ※ Core は        │     │                     │     │  ※ Executor は     │
- │    Executor を     │     │  events/            │     │    Core を知らない  │
- │    知らない        │     │    001_task.created  │     │                    │
- │                    │     │    002_decompose     │     │                    │
- │                    │     │      .requested     │     │                    │
- └────────────────────┘     └─────────────────────┘     └────────────────────┘
-```
-
-**設計上の重要な境界**:
-
-- **Core と Executor の分離**: Core は `*.requested` イベントを発行し、Executor は `*.completed` イベントを返す。双方が相手の実装を一切知らない
-- **Event Store は不変ログ + タスク管理**: イベントは事実として蓄積される。加えてタスクの作成・一覧・サマリー取得を担う
-- **Executor は自由実装**: イベントスキーマさえ守れば、実装技術は問わない
-
-## Event Store（`tanebi.event_store` 独立パッケージ・3つの責務）
-
-Event Store は Core と Executor をつなぐ唯一の接点であり、以下の3つの責務を持つ:
-
-1. **Core↔Executor間の通信ハブ**（イベント駆動）
-2. **イベントの不変ログ**（記録・再現・分析）
-3. **タスクindexの内部管理**（emit時に自動更新）
-
-### メソッド
-
-| メソッド | 説明 | 実装 |
-|---------|------|------|
-| `emit_event(cmd_dir, event_type, payload)` | イベント発火。連番YAMLファイルとして追記 | `tanebi.event_store.emit_event()` |
-| `create_task(work_dir, task_id, request)` | タスク初期化。work dir作成 + `task.created` イベント自動発火 | `tanebi.event_store.create_task()` |
-| `list_events(cmd_dir)` | タスクのイベントログを連番昇順で取得 | `tanebi.event_store.list_events()` |
-| `get_task_summary(cmd_dir)` | タスクサマリー取得（イベントログから集計） | `tanebi.event_store.get_task_summary()` |
-
-イベント定義は `events/schema.yaml` を参照
-
-## セッション開始手順
-
-1. config.yaml を読む（tanebi.execution, tanebi.checkpoint を確認）
-2. config.yaml の claude_native の値を確認
-   - true → docs/native-flow.md を読む
-   - false → docs/listener-flow.md を読む
-3. knowledge/learned/ の存在を確認 → 蓄積済みパターン数を表示（なければ「パターンなし（学習開始待ち）」）
-4. work/ をカウント → 前回のコマンド数を表示
-5. 「タスクや質問を入力してください」と案内する（TANEBIフロー/直接応答は自動判定）
-
-## タスクルーティング
-
-リクエストを受け取ったら、TANEBIフローに乗せるか直接応答するかを判断する。
-判定基準は `docs/routing.md` に従う。ルーティング宣言の形式は以下の通り:
-
+ルーティング宣言は必ずユーザーに表示する:
 ```
 [直接応答] 1ファイルの変更のため直接対応します。
-[TANEBI] 5つの独立サブタスク（API実装/テスト/ドキュメント等）が見えるためTANEBIフローで実行します。
-[エスカレーション: 直接応答 → TANEBI] 調査の結果、変更範囲が広いためTANEBIフローに切り替えます。
+[TANEBI] 4つの独立サブタスク（設計/実装/テスト/ドキュメント）が見えるためTANEBIフローで実行します。
 ```
+
+## Python 実行環境
+
+- python3コマンドの直接実行禁止
+- tanebi CLI: `.venv/bin/tanebi <コマンド>`
+- Python直接実行が必要な場合: `.venv/bin/python -m tanebi <コマンド>`
+- テスト: `.venv/bin/pytest tests/ -v`
 
 ## パス受け渡し係原則（CRITICAL）
 
-オーケストレーターは **Workerの出力内容を直接読まない**。
+オーケストレーターはWorkerの出力内容を直接読まない。パス（ポインター）のみを持つ。
+理由: Worker出力を全て読むとコンテキストが爆発する。
 
-```
-❌ 悪い例: Worker完了 → 内容を読む → Aggregatorに内容を渡す
-✅ 良い例: Worker完了 → パスを記録 → Aggregatorにパス一覧を渡す
-```
+## セッション開始手順
 
-**理由**: オーケストレーターがWorker出力を全て読むとコンテキストが爆発する。
-コンテキスト窓を管理するため、オーケストレーターはポインター（パス）のみを持つ。
+1. `config.yaml` を読む（`tanebi.execution`, `tanebi.checkpoint` を確認）
+2. `claude_native` の値に応じて `docs/native-flow.md` または `docs/listener-flow.md` を読む
+3. `knowledge/learned/` の蓄積済みパターン数を表示
+4. `work/` のコマンド数を表示
+5. 「タスクや質問を入力してください」と案内
 
-## 実装参照マップ
+## 参照ドキュメント
 
-Python実装の対応表:
-
-| 機能 | Python実装 | 備考 |
-|------|-----------|------|
-| イベント発火 | `tanebi.event_store.emit_event()` | |
-| タスク初期化 | `tanebi.event_store.create_task()` | |
-| Worker→Core通知 | `tanebi.core.callback.handle_callback()` | **Listenerモード**専用: Worker完了時にCoreへ通知 |
-| 設定読み込み | `tanebi.config` | |
-| フロー制御ハンドラ | `tanebi.core.flow` | **claude_nativeモード**専用: on_task_created 等のCore フロー制御 |
-| Core Listener | `tanebi.core.listener.CoreListener` | *.completed 監視 |
-| シグナル検出・蓄積 | `tanebi.core.signal` | |
-| パターン蒸留 | `tanebi.core.distill` | |
-| パターン注入 | `tanebi.core.inject` | |
-
-## テスト実行
-
-```bash
-.venv/bin/pytest tests/ -v
-```
-
-## 参考ドキュメント
-
-- フレームワーク全体設計は `docs/design.md` を参照
-- タスクルーティング基準は `docs/routing.md` を参照
-- Executor 実装方法は `docs/executor-design.md` を参照
+- アーキテクチャ・Event Store・イベントスキーマ → `docs/design.md`
+- ルーティング判定詳細 → `docs/routing.md`
+- Executor 実装 → `docs/executor-design.md`
