@@ -321,24 +321,56 @@ ls work/cmd_001/report.md
 
 ## Step 5: LEARN（知識蓄積）
 
-Aggregator 完了後、Learning Engine を実行する。
+Aggregator 完了後、CoreListener が `task.aggregated` イベントを検知して `learn.requested` を自動発火する。
+オーケストレーターは `learn.requested` を受け取り、Learner エージェントを Task tool で起動する。
 
-**実装**: `tanebi.core.signal`（シグナル検出・蓄積）→ `tanebi.core.distill`（パターン蒸留）→ `tanebi.core.inject`（パターン注入）の順に実行する。
+### 5-1. learn.requested イベント（自動発火）
 
-**Learning Engine が実行する4ステップ:**
+CoreListener が `task.aggregated` を処理すると `on_task_aggregated` が `learn.requested` を発火する。
+オーケストレーターが手動で emit する必要はない。
 
-1. **Signal Detection**: タスク結果のシグナルを検出
-   - success + GREEN → positive signal (weight 1.0)
-   - success + YELLOW → weak signal (weight 0.5)
-   - failure + RED → negative signal (weight 1.0)
+### 5-2. Learner 起動（Task tool）
 
-2. **Accumulation**: ドメイン別シグナルを `knowledge/signals/{domain}/` に蓄積
+`learner` カスタムエージェントを `subagent_type` で指定し、Task tool で起動する。
+`learn.requested` イベントの payload を prompt として渡す:
 
-3. **Distillation**（N≥K ルール）: 同一ドメインでK件以上のシグナルが収束したら
-   汎化パターンに蒸留 → `knowledge/learned/{domain}/`
+```
+task_id: cmd_NNN
+cmd_dir: /絶対パス/work/cmd_NNN
+report_path: /絶対パス/work/cmd_NNN/report.md
+```
 
-4. **Injection**: 蒸留済みパターンを次回タスクに引き継ぐ。
-   次回の Decomposer/Worker 起動時に payload の `learned_patterns_paths` として渡す。
+**Task tool 起動パラメータ:**
+
+- `subagent_type: "learner"` — カスタムエージェントを指定
+- `prompt`: 上記 payload テキスト
+- **`run_in_background` は不要**: エージェント定義の `background: true` により自動的にバックグラウンド実行される
+
+### 5-3. Learner 完了確認
+
+Learner は以下を実行する:
+1. `report.md` と `results/roundN/` の Worker 出力を読む
+2. タスク全体から「学ぶべきパターン」を自身の知性で抽出する
+3. domain 別にシグナル YAML を `knowledge/signals/{domain}/` に書き出す
+4. 蒸留トリガーチェック（N≥K）を実行し、条件を満たせば `distilled=true` を記録する
+5. `learn.completed` イベントを発火する
+
+```bash
+# learn.completed が存在すれば Learner 完了
+ls work/cmd_001/events/*learn.completed*
+```
+
+### 5-4. learn.completed → completed
+
+`learn.completed` が発火されると `determine_state()` が `"completed"` を返す。
+タスクフロー完了。
+
+**Learned Patterns の確認:**
+
+```bash
+ls knowledge/signals/    # 蓄積中シグナル（まだ蒸留前）
+ls knowledge/learned/    # 蒸留済みパターン（ドメイン別）
+```
 
 ---
 

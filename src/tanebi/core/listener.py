@@ -40,4 +40,8 @@ class CoreListener:
             flow.on_wave_completed(cmd_dir, payload)
         elif event_type == "checkpoint.completed":
             flow.on_checkpoint_completed(cmd_dir, payload)
+        elif event_type == "task.aggregated":
+            flow.on_task_aggregated(cmd_dir, payload)
+        elif event_type == "learn.completed":
+            flow.on_learn_completed(cmd_dir, payload)
         # その他のイベントは無視

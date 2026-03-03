@@ -147,3 +147,19 @@ events:
       domain: string
       patterns_created: array
       confidence: number
+
+  learn.requested:
+    description: "CoreがLearnerに知識抽出を依頼するイベント"
+    direction: "Core → Event Store（Executor読取）"
+    payload:
+      task_id: string
+      cmd_dir: string       # work/{task_id}/ のパス
+      report_path: string   # work/{task_id}/report.md
+
+  learn.completed:
+    description: "Learner完了後のイベント"
+    payload:
+      task_id: string
+      signals_created: integer  # 生成したシグナル数
+      domains: array            # 対象ドメイン一覧
+      distilled: bool           # 蒸留を実行したか

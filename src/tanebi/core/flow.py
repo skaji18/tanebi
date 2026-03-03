@@ -243,6 +243,10 @@ def determine_state(cmd_dir: Path) -> str:
     if last_type == "aggregate.requested":
         return "aggregating"
     if last_type == "task.aggregated":
+        return "learn_requested"
+    if last_type == "learn.requested":
+        return "learning"
+    if last_type == "learn.completed":
         return "completed"
     return "unknown"
 
@@ -533,3 +537,22 @@ def on_checkpoint_completed(cmd_dir: Path, payload: dict) -> None:
             },
             round=next_round,
         )
+
+
+def on_task_aggregated(cmd_dir: Path, payload: dict) -> None:
+    """task.aggregated イベントに反応し learn.requested を発火する。"""
+    cmd_dir = Path(cmd_dir)
+    emit_event(
+        cmd_dir,
+        "learn.requested",
+        {
+            "task_id": payload.get("task_id", cmd_dir.name),
+            "cmd_dir": str(cmd_dir),
+            "report_path": payload.get("report_path", str(cmd_dir / "report.md")),
+        },
+    )
+
+
+def on_learn_completed(cmd_dir: Path, payload: dict) -> None:
+    """learn.completed イベントに反応する（learn.completed が terminal state のため no-op）。"""
+    pass

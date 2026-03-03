@@ -8,6 +8,8 @@ from tanebi.event_store import emit_event
 from tanebi.core.flow import (
     determine_state,
     on_checkpoint_completed,
+    on_learn_completed,
+    on_task_aggregated,
     on_task_created,
     on_task_decomposed,
     on_wave_completed,
@@ -35,11 +37,27 @@ def test_determine_state_needs_decompose(tmp_tanebi_root):
     assert determine_state(cmd_dir) == "needs_decompose"
 
 
-def test_determine_state_completed(tmp_tanebi_root):
-    """task.aggregated が最後のイベント → 'completed'"""
+def test_determine_state_learn_requested(tmp_tanebi_root):
+    """task.aggregated が最後のイベント → 'learn_requested'"""
     cmd_dir = _cmd_dir(tmp_tanebi_root)
     emit_event(cmd_dir, "task.created", {"task_id": "cmd_001", "request_summary": "テスト"})
     emit_event(cmd_dir, "task.aggregated", {"task_id": "cmd_001", "report_path": "/tmp/report.md", "quality_summary": {}})
+    assert determine_state(cmd_dir) == "learn_requested"
+
+
+def test_determine_state_learning(tmp_tanebi_root):
+    """learn.requested が最後のイベント → 'learning'"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+    emit_event(cmd_dir, "task.aggregated", {"task_id": "cmd_001", "report_path": "/tmp/report.md", "quality_summary": {}})
+    emit_event(cmd_dir, "learn.requested", {"task_id": "cmd_001", "cmd_dir": str(cmd_dir), "report_path": "/tmp/report.md"})
+    assert determine_state(cmd_dir) == "learning"
+
+
+def test_determine_state_completed(tmp_tanebi_root):
+    """learn.completed が最後のイベント → 'completed'"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+    emit_event(cmd_dir, "task.aggregated", {"task_id": "cmd_001", "report_path": "/tmp/report.md", "quality_summary": {}})
+    emit_event(cmd_dir, "learn.completed", {"task_id": "cmd_001", "signals_created": 3, "domains": ["backend"], "distilled": False})
     assert determine_state(cmd_dir) == "completed"
 
 
@@ -274,3 +292,35 @@ def test_all_workers_complete_filters_by_round(tmp_tanebi_root):
     on_worker_completed(cmd_dir, {"wave": 1, "round": 1})
     events_after = len(list(events_dir.glob("*.yaml")))
     assert events_after == events_before  # 新しいイベントなし
+
+
+# ---------------------------------------------------------------------------
+# Learner 関連テスト
+# ---------------------------------------------------------------------------
+
+def test_on_task_aggregated_emits_learn_requested(tmp_tanebi_root):
+    """on_task_aggregated → learn.requested が発火される"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+    report_path = str(cmd_dir / "report.md")
+
+    on_task_aggregated(cmd_dir, {"task_id": "cmd_001", "report_path": report_path, "quality_summary": {}})
+
+    events_dir = cmd_dir / "events"
+    event_files = list(events_dir.glob("*.yaml"))
+    assert len(event_files) == 1
+    data = yaml.safe_load(event_files[0].read_text(encoding="utf-8"))
+    assert data["event_type"] == "learn.requested"
+    assert data["payload"]["task_id"] == "cmd_001"
+    assert data["payload"]["report_path"] == report_path
+    assert "cmd_dir" in data["payload"]
+
+
+def test_on_learn_completed_is_noop(tmp_tanebi_root):
+    """on_learn_completed → 新たなイベントは発火されない（no-op）"""
+    cmd_dir = _cmd_dir(tmp_tanebi_root)
+
+    on_learn_completed(cmd_dir, {"task_id": "cmd_001", "signals_created": 2, "domains": ["backend"], "distilled": False})
+
+    events_dir = cmd_dir / "events"
+    event_files = list(events_dir.glob("*.yaml"))
+    assert len(event_files) == 0  # 新規イベントなし
