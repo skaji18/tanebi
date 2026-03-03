@@ -153,8 +153,12 @@ events:
     direction: "Core → Event Store（Executor読取）"
     payload:
       task_id: string
-      cmd_dir: string       # work/{task_id}/ のパス
-      report_path: string   # work/{task_id}/report.md
+      cmd_dir: string           # work/{task_id}/ のパス
+      report_path: string       # work/{task_id}/report.md
+      results_dir: string       # work/{task_id}/results/round{N}/ のパス
+      knowledge_dir: string     # knowledge/ のパス（知識ベースルート）
+      output_path: string       # Learner結果の出力先パス
+      round: integer            # ラウンド番号
 
   learn.completed:
     description: "Learner完了後のイベント"

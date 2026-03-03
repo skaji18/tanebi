@@ -542,6 +542,11 @@ def on_checkpoint_completed(cmd_dir: Path, payload: dict) -> None:
 def on_task_aggregated(cmd_dir: Path, payload: dict) -> None:
     """task.aggregated イベントに反応し learn.requested を発火する。"""
     cmd_dir = Path(cmd_dir)
+    round_num = payload.get("round", 1)
+    tanebi_root = cmd_dir.parent.parent  # cmd_dir = TANEBI_ROOT/work/cmd_xxx
+    knowledge_dir = tanebi_root / "knowledge"
+    results_dir = cmd_dir / "results" / f"round{round_num}"
+    output_path = cmd_dir / "learn_result.md"
     emit_event(
         cmd_dir,
         "learn.requested",
@@ -549,6 +554,10 @@ def on_task_aggregated(cmd_dir: Path, payload: dict) -> None:
             "task_id": payload.get("task_id", cmd_dir.name),
             "cmd_dir": str(cmd_dir),
             "report_path": payload.get("report_path", str(cmd_dir / "report.md")),
+            "results_dir": str(results_dir),
+            "knowledge_dir": str(knowledge_dir),
+            "output_path": str(output_path),
+            "round": round_num,
         },
     )
 
