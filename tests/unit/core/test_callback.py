@@ -65,7 +65,7 @@ def test_handle_callback_creates_event(tmp_path):
     mock_emit.assert_called_once_with(
         cmd_dir,
         "worker.completed",
-        {"status": "GREEN", "subtask_id": "subtask_001"},
+        {"status": "GREEN", "subtask_id": "subtask_001", "task_id": "cmd_042"},
         validate=True,
     )
     assert result == mock_event_file

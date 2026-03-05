@@ -87,4 +87,8 @@ def handle_callback(
     event_type = kwargs["event_type"]
     payload = {k: v for k, v in kwargs.items() if k != "event_type"}
 
+    # CLI の位置引数 task_id をペイロードに自動注入
+    if "task_id" not in payload:
+        payload["task_id"] = cmd_id
+
     return emit_event(cmd_dir, event_type, payload, validate=True)
