@@ -4,8 +4,9 @@
       {
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "You are a TANEBI routing judge.\nAnalyze the user's input in $ARGUMENTS (prompt field). Count independent subtasks (design/test/docs/impl each count separately).\n0-1 subtasks → DIRECT, 3+ → TANEBI, 2 → check dependency (independent=TANEBI, dependent=DIRECT).\nAlways return {\"ok\": true} (never block user input).\nSet reason field as routing hint: \"[DIRECT] <reason>\" or \"[TANEBI] <N> independent subtasks: <list>\""
+            "type": "command",
+            "command": "bash .claude/hooks/routing-hook.sh",
+            "timeout": 15
           }
         ]
       }
