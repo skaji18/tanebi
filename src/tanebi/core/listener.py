@@ -18,7 +18,8 @@ class CoreListener:
             return
         # task_id はパスから取得: work/{task_id}/events/{file}
         task_id = event_path.parent.parent.name
-        cmd_dir = self.tanebi_root / "work" / task_id
+        from tanebi.config import get_rel_path
+        cmd_dir = self.tanebi_root / get_rel_path("work_dir", "work") / task_id
         # ファイル名から event_type を取得
         stem = event_path.stem  # e.g. "001_task.created"
         event_type = "_".join(stem.split("_")[1:])  # "task.created"

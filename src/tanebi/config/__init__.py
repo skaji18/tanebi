@@ -5,8 +5,8 @@ from pathlib import Path
 import yaml
 
 __all__ = [
-    "load_config", "get", "validate_config", "get_path", "_reset_cache",
-    "TANEBI_ROOT", "WORK_DIR", "KNOWLEDGE_DIR", "EPISODE_DIR",
+    "load_config", "get", "validate_config", "get_path", "get_rel_path", "_reset_cache",
+    "TANEBI_ROOT", "WORK_DIR", "KNOWLEDGE_DIR", "SIGNALS_DIR", "LEARNED_DIR", "EPISODE_DIR",
 ]
 
 _cache: dict | None = None
@@ -59,10 +59,9 @@ def validate_config(config: dict) -> None:
     """Validate required config fields."""
     tanebi = config.get("tanebi", {}) or {}
     paths = tanebi.get("paths", {}) or {}
-    # flat or nested tanebi.paths.work_dir 形式でチェック
-    work_dir = config.get("work_dir") or paths.get("work_dir")
+    work_dir = paths.get("work_dir")
     if not work_dir:
-        raise ValueError("Missing required config field: work_dir")
+        raise ValueError("Missing required config field: tanebi.paths.work_dir")
 
 
 def get_path(key: str, default=None, tanebi_root=None) -> str | None:
@@ -79,6 +78,13 @@ def get_path(key: str, default=None, tanebi_root=None) -> str | None:
     return str(root / rel)
 
 
+def get_rel_path(key: str, default: str = "") -> str:
+    """config の tanebi.paths.{key} から相対パスを返す。"""
+    cfg = load_config()
+    paths = cfg.get("tanebi", {}).get("paths", {})
+    return paths.get(key, default)
+
+
 def _reset_cache() -> None:
     """Reset config cache (for tests)."""
     global _cache, _root_cache
@@ -88,13 +94,16 @@ def _reset_cache() -> None:
 
 # パス定数（モジュールレベルで export）
 def _init_paths():
-    global TANEBI_ROOT, WORK_DIR, KNOWLEDGE_DIR, EPISODE_DIR
+    global TANEBI_ROOT, WORK_DIR, KNOWLEDGE_DIR, SIGNALS_DIR, LEARNED_DIR, EPISODE_DIR
     root = _find_tanebi_root()
     cfg = load_config(root)
+    paths = cfg.get("tanebi", {}).get("paths", {})
     TANEBI_ROOT = str(root)
-    WORK_DIR = str(root / cfg.get("work_dir", "work"))
-    KNOWLEDGE_DIR = str(root / cfg.get("knowledge_dir", "knowledge"))
-    EPISODE_DIR = str(root / cfg.get("episode_dir", "knowledge/episodes"))
+    WORK_DIR = str(root / paths.get("work_dir", "work"))
+    KNOWLEDGE_DIR = str(root / paths.get("knowledge_dir", "knowledge"))
+    SIGNALS_DIR = str(root / paths.get("signals_dir", "knowledge/signals"))
+    LEARNED_DIR = str(root / paths.get("learned_dir", "knowledge/learned"))
+    EPISODE_DIR = str(root / paths.get("episode_dir", "knowledge/episodes"))
 
 
 _init_paths()

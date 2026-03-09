@@ -16,7 +16,7 @@ def test_submit_empty_request(tmp_tanebi_root):
 
     submit は request の内容をバリデートしない仕様のため、正常に処理される。
     """
-    task_id = api.submit("", project_dir=tmp_tanebi_root)
+    task_id = api.submit("", work_dir=tmp_tanebi_root / "work")
     assert isinstance(task_id, str)
     assert task_id.startswith("cmd_")
     # request.md が空ファイルとして作成される
@@ -27,7 +27,7 @@ def test_submit_empty_request(tmp_tanebi_root):
 
 def test_status_nonexistent_task(tmp_tanebi_root):
     """存在しない task_id で api.status() を呼ぶ → not_found 応答"""
-    s = api.status("cmd_999", project_dir=tmp_tanebi_root)
+    s = api.status("cmd_999", work_dir=tmp_tanebi_root / "work")
     assert s["task_id"] == "cmd_999"
     assert s["state"] == "not_found"
     assert s["event_count"] == 0

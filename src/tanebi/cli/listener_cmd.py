@@ -46,7 +46,8 @@ class EventRouter:
 
         handler = _EventHandler(core, self.executor_listener)
         self._observer = Observer()
-        work_dir = self.tanebi_root / "work"
+        from tanebi.config import get_rel_path
+        work_dir = self.tanebi_root / get_rel_path("work_dir", "work")
         work_dir.mkdir(exist_ok=True)
         self._observer.schedule(handler, str(work_dir), recursive=True)
         self._observer.start()

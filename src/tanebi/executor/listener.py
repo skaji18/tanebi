@@ -95,7 +95,8 @@ class ExecutorListener:
     def _dispatch(self, task_id: str, event_type: str, payload: dict) -> None:
         from tanebi.executor.worker import run_claude_p  # noqa: F401
         from tanebi.event_store import emit_event  # noqa: F401
-        cmd_dir = self.tanebi_root / "work" / task_id
+        from tanebi.config import get_rel_path
+        cmd_dir = self.tanebi_root / get_rel_path("work_dir", "work") / task_id
         if event_type == "decompose.requested":
             self._run_decompose(cmd_dir, payload)
         elif event_type in ("execute.requested", "checkpoint.requested"):

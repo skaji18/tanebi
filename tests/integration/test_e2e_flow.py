@@ -30,7 +30,7 @@ def test_full_flow_task_submit_to_execute(mock_run_claude, tmp_tanebi_root):
     9. api.status() でタスク状態を確認
     """
     # 1. タスク投入 → EventStore に task.created が記録される
-    task_id = api.submit("テストリクエスト", project_dir=tmp_tanebi_root)
+    task_id = api.submit("テストリクエスト", work_dir=tmp_tanebi_root / "work")
     cmd_dir = tmp_tanebi_root / "work" / task_id
 
     events = list_events(cmd_dir)
@@ -107,6 +107,6 @@ def test_full_flow_task_submit_to_execute(mock_run_claude, tmp_tanebi_root):
     )
 
     # 9. api.status() でタスク状態が確認できる
-    s = api.status(task_id, project_dir=tmp_tanebi_root)
+    s = api.status(task_id, work_dir=tmp_tanebi_root / "work")
     assert s["task_id"] == task_id
     assert "task.aggregated" in s["events"], "task.aggregated がステータスに反映されていない"
