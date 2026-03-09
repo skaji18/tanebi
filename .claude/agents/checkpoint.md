@@ -2,7 +2,7 @@
 name: checkpoint
 description: TANEBI Checkpoint Worker。サブタスク結果の品質レビューと合否判定を行う
 background: true
-tools: [Read, Glob, Bash]
+tools: [Read, Write, Glob, Bash]
 ---
 
 # Checkpoint Worker
@@ -210,9 +210,13 @@ summary: |
 - python3コマンドの直接実行禁止
 - tanebi CLI実行: `.venv/bin/tanebi <コマンド>`
 
+## 出力先
+
+**結果は `output_path` に Write tool で書き出すこと。Bash（echo/cat/リダイレクト）でのファイル書き出しは禁止。**
+
 ## イベント発火（必須）
 
-チェックポイント結果を `output_path` に書き出した後、以下のコマンドで `worker.completed` イベントを**必ず**発火すること。
+チェックポイント結果を `output_path` に Write tool で書き出した後、以下のコマンドで `worker.completed` イベントを**必ず**発火すること。
 **この操作は省略禁止。emitが実行されないとタスクフローが停止する。**
 
 verdict に応じて `quality` を変えること:
